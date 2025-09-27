@@ -1,17 +1,6 @@
 {
-  "extends": ["next/core-web-vitals"],
-  "rules": {
-    "prefer-const": "off",
-    "react/no-unescaped-entities": "off",
-    "@next/next/no-img-element": "off",
-    "jsx-a11y/alt-text": "off",
-    "react-hooks/rules-of-hooks": "off"
-  },
-  "ignorePatterns": [
-    "node_modules/",
-    ".next/",
-    "dist/"
-  ]
+  "extends": [],
+  "rules": {}
 }
 
 

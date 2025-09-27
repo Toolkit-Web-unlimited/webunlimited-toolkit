@@ -445,7 +445,7 @@ export default function SiteAnalyzerPage() {
             <CardContent className="text-center py-12">
               <Search className="w-12 h-12 text-text-muted mx-auto mb-4" />
               <p className="text-text-secondary">
-                Gib eine URL ein und klicke "Analysieren", um eine SEO-Analyse zu starten.
+                Gib eine URL ein und klicke &quot;Analysieren&quot;, um eine SEO-Analyse zu starten.
               </p>
             </CardContent>
           </Card>
