@@ -144,8 +144,8 @@ function analyzeHTML(html: string, url: string): AnalysisResult {
   const jsMatches = html.match(/<script[^>]*src=["']([^"']*)["'][^>]*>/gi) || [];
 
   let totalSizeKB = 0;
-  let cssCount = cssMatches.length;
-  let jsCount = jsMatches.length;
+  const cssCount = cssMatches.length;
+  const jsCount = jsMatches.length;
 
   // Try to get asset sizes for same-origin resources
   const baseUrl = new URL(url);

@@ -184,8 +184,8 @@ export default function SafeZonePage() {
       
       const img = new Image();
       img.onload = () => {
-        let width = img.naturalWidth;
-        let height = img.naturalHeight;
+        const width = img.naturalWidth;
+        const height = img.naturalHeight;
         
         const ratioDetection = detectAspectRatio(width, height);
         const specs: ImageSpecs = {

@@ -261,7 +261,7 @@ export default function ContrastCheckerPage() {
                         {sampledColors.map((sample, index) => (
                           <button
                             key={index}
-                            onClick={() => useSampledColor(sample.color)}
+                            onClick={() => setBackgroundColor(sample.color)}
                             className="w-8 h-8 rounded border-2 border-white shadow-lg hover:scale-110 transition-transform"
                             style={{ backgroundColor: sample.color }}
                             title={`Verwende ${sample.color}`}

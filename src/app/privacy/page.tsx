@@ -155,7 +155,7 @@ export default function PrivacyPage() {
             </p>
             <div className="bg-surface-secondary p-4 rounded-lg mt-4">
               <p>E-Mail: [E-Mail-Adresse]<br />
-              Betreff: "Datenschutz Web Unlimited Toolkit"</p>
+              Betreff: &quot;Datenschutz Web Unlimited Toolkit&quot;</p>
             </div>
           </CardContent>
         </Card>

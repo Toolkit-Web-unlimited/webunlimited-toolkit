@@ -113,7 +113,7 @@ export default function ImprintPage() {
             <div>
               <h4 className="font-medium mb-2">Keine Gewährleistung</h4>
               <p className="text-text-secondary">
-                Die Tools werden "wie besehen" zur Verfügung gestellt. Es wird keine Gewährleistung für 
+                Die Tools werden &quot;wie besehen&quot; zur Verfügung gestellt. Es wird keine Gewährleistung für 
                 die Richtigkeit der Ergebnisse oder die Eignung für bestimmte Zwecke gegeben.
               </p>
             </div>
@@ -165,7 +165,7 @@ export default function ImprintPage() {
             </p>
             <div className="bg-surface-secondary p-4 rounded-lg mt-4">
               <p><strong>E-Mail:</strong> [E-Mail-Adresse]<br />
-              <strong>Betreff:</strong> "Web Unlimited Toolkit"</p>
+              <strong>Betreff:</strong> &quot;Web Unlimited Toolkit&quot;</p>
               <p className="text-sm text-text-secondary mt-2">
                 Wir bemühen uns, Anfragen innerhalb von 24 Stunden zu beantworten.
               </p>
