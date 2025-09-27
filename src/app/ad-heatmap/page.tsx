@@ -23,6 +23,7 @@ export default function AdHeatmapPage() {
   const [faceDetectionEnabled, setFaceDetectionEnabled] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackMode, setFallbackMode] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -45,143 +46,259 @@ export default function AdHeatmapPage() {
     }
 
     setError(null);
+    setFallbackMode(false);
     setIsProcessing(true);
 
     try {
+      console.log('Starting image upload and processing...');
+      
+      // Use createImageBitmap for better async handling
+      const imageBitmap = await createImageBitmap(file);
       const imageUrl = URL.createObjectURL(file);
       setImage(imageUrl);
 
-      // Load image and process
-      const img = new Image();
-      img.onload = async () => {
-        try {
-          const heatmap = await processHeatmap(img);
-          setHeatmapData(heatmap);
-          updateHeatmapDisplay();
-        } catch (err) {
-          setError('Fehler bei der Heatmap-Berechnung.');
-          console.error('Heatmap processing error:', err);
-        } finally {
-          setIsProcessing(false);
-        }
-      };
-      img.src = imageUrl;
+      console.log('Image loaded, dimensions:', imageBitmap.width, 'x', imageBitmap.height);
+      
+      const heatmap = await processHeatmap(imageBitmap);
+      setHeatmapData(heatmap);
+      updateHeatmapDisplay();
+      
     } catch (err) {
-      setError('Fehler beim Laden des Bildes.');
+      console.error('Image processing error:', err);
+      setError(`Fehler bei der Bildverarbeitung: ${err instanceof Error ? err.message : 'Unbekannter Fehler'}`);
+      
+      // Try fallback processing
+      try {
+        console.log('Attempting fallback processing...');
+        const imageUrl = URL.createObjectURL(file);
+        setImage(imageUrl);
+        
+        const img = new Image();
+        img.onload = async () => {
+          try {
+            const fallbackHeatmap = await processFallbackHeatmap(img);
+            setHeatmapData(fallbackHeatmap);
+            setFallbackMode(true);
+            updateHeatmapDisplay();
+            setError('Heatmap mit vereinfachter Berechnung erstellt.');
+          } catch (fallbackErr) {
+            console.error('Fallback processing failed:', fallbackErr);
+            setError('Heatmap-Berechnung fehlgeschlagen. Bitte versuche ein anderes Bild.');
+          }
+        };
+        img.src = imageUrl;
+      } catch (fallbackErr) {
+        console.error('Fallback setup failed:', fallbackErr);
+        setError('Bild konnte nicht geladen werden.');
+      }
+    } finally {
       setIsProcessing(false);
     }
   }, []);
 
-  const processHeatmap = async (img: HTMLImageElement): Promise<HeatmapData> => {
-    const canvas = hiddenCanvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
+  const processHeatmap = async (imageBitmap: ImageBitmap): Promise<HeatmapData> => {
+    console.log('Starting heatmap processing...');
     
-    // Normalize image size (max 1280px on longest edge)
-    const maxSize = 1280;
-    const ratio = Math.min(maxSize / img.width, maxSize / img.height);
-    const width = Math.round(img.width * ratio);
-    const height = Math.round(img.height * ratio);
-    
-    canvas.width = width;
-    canvas.height = height;
-    
-    // Draw scaled image
-    ctx.drawImage(img, 0, 0, width, height);
-    
-    // Get image data
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    
-    // Initialize heatmap data
-    const heatmap = new Float32Array(width * height);
-    
-    // Edge detection (Laplacian)
-    const edges = detectEdges(imageData, width, height);
-    
-    // Color analysis (saturation and brightness)
-    const colorScores = analyzeColors(imageData, width, height);
-    
-    // Face detection (optional)
-    let faceScores = new Float32Array(width * height);
-    if (faceDetectionEnabled) {
-      try {
-        faceScores = await detectFaces(imageData, width, height);
-      } catch (err) {
-        console.warn('Face detection failed:', err);
+    try {
+      const canvas = hiddenCanvasRef.current;
+      if (!canvas) throw new Error('Hidden canvas not available');
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context not available');
+      
+      console.log('Canvas setup successful');
+      
+      // Normalize image size (max 1280px on longest edge)
+      const maxSize = 1280;
+      const ratio = Math.min(maxSize / imageBitmap.width, maxSize / imageBitmap.height);
+      const width = Math.round(imageBitmap.width * ratio);
+      const height = Math.round(imageBitmap.height * ratio);
+      
+      console.log('Image dimensions:', width, 'x', height);
+      
+      // Set canvas dimensions exactly
+      canvas.width = width;
+      canvas.height = height;
+      
+      console.log('Canvas dimensions set to:', canvas.width, 'x', canvas.height);
+      
+      // Draw scaled image
+      ctx.drawImage(imageBitmap, 0, 0, width, height);
+      
+      console.log('Image drawn to canvas');
+      
+      // Get image data
+      const imageData = ctx.getImageData(0, 0, width, height);
+      if (!imageData || !imageData.data) {
+        throw new Error('Failed to get image data from canvas');
       }
+      
+      console.log('Image data retrieved, length:', imageData.data.length);
+      
+      // Initialize heatmap data
+      const heatmap = new Float32Array(width * height);
+      
+      // Edge detection (Laplacian)
+      console.log('Starting edge detection...');
+      let edges: Float32Array;
+      try {
+        edges = detectEdges(imageData, width, height);
+        console.log('Edge detection completed');
+      } catch (err) {
+        console.error('Heatmap step: Edge detection failed', err);
+        // Create fallback edges (zeros)
+        edges = new Float32Array(width * height);
+      }
+      
+      // Color analysis (saturation and brightness)
+      console.log('Starting color analysis...');
+      let colorScores: Float32Array;
+      try {
+        colorScores = analyzeColors(imageData, width, height);
+        console.log('Color analysis completed');
+      } catch (err) {
+        console.error('Heatmap step: Color analysis failed', err);
+        // Create fallback color scores (zeros)
+        colorScores = new Float32Array(width * height * 2);
+      }
+      
+      // Face detection (optional)
+      let faceScores = new Float32Array(width * height);
+      if (faceDetectionEnabled) {
+        try {
+          console.log('Starting face detection...');
+          faceScores = await detectFaces(imageData, width, height);
+          console.log('Face detection completed');
+        } catch (err) {
+          console.error('Heatmap step: Face detection failed', err);
+        }
+      }
+      
+      // Fusion: 0.6*edges + 0.15*saturation + 0.1*brightness + 0.15*faces
+      console.log('Starting fusion...');
+      try {
+        for (let i = 0; i < width * height; i++) {
+          const saturation = colorScores[i] || 0;
+          const brightness = colorScores[i + width * height] || 0;
+          const edge = edges[i] || 0;
+          const face = faceScores[i] || 0;
+          
+          heatmap[i] = 0.6 * edge + 0.15 * saturation + 0.1 * brightness + 0.15 * face;
+        }
+        console.log('Fusion completed');
+      } catch (err) {
+        console.error('Heatmap step: Fusion failed', err);
+        throw err;
+      }
+      
+      // Normalize to 0-1
+      console.log('Normalizing heatmap...');
+      try {
+        normalizeArray(heatmap);
+        console.log('Normalization completed');
+      } catch (err) {
+        console.error('Heatmap step: Normalization failed', err);
+        throw err;
+      }
+      
+      // Apply Gaussian smoothing
+      console.log('Applying Gaussian blur...');
+      try {
+        applyGaussianBlur(heatmap, width, height, Math.min(width, height) * 0.01);
+        console.log('Gaussian blur completed');
+      } catch (err) {
+        console.error('Heatmap step: Gaussian blur failed', err);
+        // Continue without blur
+      }
+      
+      console.log('Heatmap processing completed successfully');
+      return { width, height, data: heatmap };
+      
+    } catch (err) {
+      console.error('Heatmap processing failed:', err);
+      throw err;
     }
-    
-    // Fusion: 0.6*edges + 0.15*saturation + 0.1*brightness + 0.15*faces
-    for (let i = 0; i < width * height; i++) {
-      heatmap[i] = 0.6 * edges[i] + 0.15 * colorScores[i] + 0.1 * (colorScores[i + width * height]) + 0.15 * faceScores[i];
-    }
-    
-    // Normalize to 0-1
-    normalizeArray(heatmap);
-    
-    // Apply Gaussian smoothing
-    applyGaussianBlur(heatmap, width, height, Math.min(width, height) * 0.01);
-    
-    return { width, height, data: heatmap };
   };
 
   const detectEdges = (imageData: ImageData, width: number, height: number): Float32Array => {
-    const data = imageData.data;
-    const edges = new Float32Array(width * height);
+    console.log('Detecting edges for', width, 'x', height);
     
-    // Convert to grayscale and apply Laplacian
-    const grayscale = new Float32Array(width * height);
-    for (let i = 0; i < width * height; i++) {
-      const r = data[i * 4];
-      const g = data[i * 4 + 1];
-      const b = data[i * 4 + 2];
-      grayscale[i] = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
-    }
-    
-    // 3x3 Laplacian kernel
-    const kernel = [0, -1, 0, -1, 4, -1, 0, -1, 0];
-    
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-        let sum = 0;
-        for (let ky = -1; ky <= 1; ky++) {
-          for (let kx = -1; kx <= 1; kx++) {
-            const idx = (y + ky) * width + (x + kx);
-            const kernelIdx = (ky + 1) * 3 + (kx + 1);
-            sum += grayscale[idx] * kernel[kernelIdx];
-          }
-        }
-        edges[y * width + x] = Math.abs(sum);
+    try {
+      const data = imageData.data;
+      const edges = new Float32Array(width * height);
+      
+      // Convert to grayscale and apply Laplacian
+      const grayscale = new Float32Array(width * height);
+      for (let i = 0; i < width * height; i++) {
+        const r = Math.min(255, Math.max(0, data[i * 4] || 0));
+        const g = Math.min(255, Math.max(0, data[i * 4 + 1] || 0));
+        const b = Math.min(255, Math.max(0, data[i * 4 + 2] || 0));
+        grayscale[i] = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
       }
+      
+      console.log('Grayscale conversion completed');
+      
+      // 3x3 Laplacian kernel
+      const kernel = [0, -1, 0, -1, 4, -1, 0, -1, 0];
+      
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          let sum = 0;
+          for (let ky = -1; ky <= 1; ky++) {
+            for (let kx = -1; kx <= 1; kx++) {
+              const idx = (y + ky) * width + (x + kx);
+              const kernelIdx = (ky + 1) * 3 + (kx + 1);
+              sum += (grayscale[idx] || 0) * kernel[kernelIdx];
+            }
+          }
+          edges[y * width + x] = Math.abs(sum);
+        }
+      }
+      
+      console.log('Laplacian kernel applied');
+      
+      normalizeArray(edges);
+      console.log('Edge detection completed successfully');
+      return edges;
+      
+    } catch (err) {
+      console.error('Edge detection error:', err);
+      throw err;
     }
-    
-    normalizeArray(edges);
-    return edges;
   };
 
   const analyzeColors = (imageData: ImageData, width: number, height: number): Float32Array => {
-    const data = imageData.data;
-    const scores = new Float32Array(width * height * 2); // saturation + brightness
+    console.log('Analyzing colors for', width, 'x', height);
     
-    for (let i = 0; i < width * height; i++) {
-      const r = data[i * 4] / 255;
-      const g = data[i * 4 + 1] / 255;
-      const b = data[i * 4 + 2] / 255;
+    try {
+      const data = imageData.data;
+      const scores = new Float32Array(width * height * 2); // saturation + brightness
       
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      const delta = max - min;
+      for (let i = 0; i < width * height; i++) {
+        const r = Math.min(1, Math.max(0, (data[i * 4] || 0) / 255));
+        const g = Math.min(1, Math.max(0, (data[i * 4 + 1] || 0) / 255));
+        const b = Math.min(1, Math.max(0, (data[i * 4 + 2] || 0) / 255));
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        
+        // Saturation
+        const saturation = max === 0 ? 0 : delta / max;
+        scores[i] = Math.min(1, Math.max(0, saturation));
+        
+        // Brightness (luminance)
+        const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+        scores[i + width * height] = Math.min(1, Math.max(0, brightness));
+      }
       
-      // Saturation
-      const saturation = max === 0 ? 0 : delta / max;
-      scores[i] = saturation;
+      console.log('Color analysis completed successfully');
+      return scores;
       
-      // Brightness (luminance)
-      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-      scores[i + width * height] = brightness;
+    } catch (err) {
+      console.error('Color analysis error:', err);
+      throw err;
     }
-    
-    return scores;
   };
 
   const detectFaces = async (imageData: ImageData, width: number, height: number): Promise<Float32Array> => {
@@ -190,62 +307,139 @@ export default function AdHeatmapPage() {
     return new Float32Array(width * height);
   };
 
-  const normalizeArray = (arr: Float32Array) => {
-    const min = Math.min(...arr);
-    const max = Math.max(...arr);
-    const range = max - min;
-    if (range === 0) return;
+  const processFallbackHeatmap = async (img: HTMLImageElement): Promise<HeatmapData> => {
+    console.log('Processing fallback heatmap...');
     
-    for (let i = 0; i < arr.length; i++) {
-      arr[i] = (arr[i] - min) / range;
+    try {
+      const canvas = hiddenCanvasRef.current;
+      if (!canvas) throw new Error('Hidden canvas not available');
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context not available');
+      
+      // Use smaller size for fallback
+      const maxSize = 800;
+      const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+      const width = Math.round(img.width * ratio);
+      const height = Math.round(img.height * ratio);
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const heatmap = new Float32Array(width * height);
+      
+      // Simple brightness-based heatmap
+      const data = imageData.data;
+      for (let i = 0; i < width * height; i++) {
+        const r = data[i * 4] || 0;
+        const g = data[i * 4 + 1] || 0;
+        const b = data[i * 4 + 2] || 0;
+        
+        // Simple luminance calculation
+        const brightness = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+        heatmap[i] = brightness;
+      }
+      
+      normalizeArray(heatmap);
+      
+      console.log('Fallback heatmap completed');
+      return { width, height, data: heatmap };
+      
+    } catch (err) {
+      console.error('Fallback heatmap failed:', err);
+      throw err;
+    }
+  };
+
+  const normalizeArray = (arr: Float32Array) => {
+    try {
+      let min = Infinity;
+      let max = -Infinity;
+      
+      // Find min/max safely
+      for (let i = 0; i < arr.length; i++) {
+        const val = arr[i];
+        if (!isNaN(val) && isFinite(val)) {
+          min = Math.min(min, val);
+          max = Math.max(max, val);
+        }
+      }
+      
+      if (!isFinite(min) || !isFinite(max) || min === max) {
+        console.warn('Array normalization: all values are the same or invalid');
+        return;
+      }
+      
+      const range = max - min;
+      
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = Math.min(1, Math.max(0, (arr[i] - min) / range));
+      }
+      
+      console.log('Array normalized, range:', min, 'to', max);
+    } catch (err) {
+      console.error('Normalization error:', err);
+      throw err;
     }
   };
 
   const applyGaussianBlur = (data: Float32Array, width: number, height: number, sigma: number) => {
-    // Simple Gaussian blur implementation
-    const kernelSize = Math.ceil(sigma * 3) * 2 + 1;
-    const kernel: number[] = [];
-    let sum = 0;
+    console.log('Applying Gaussian blur with sigma:', sigma);
     
-    for (let i = 0; i < kernelSize; i++) {
-      const x = i - Math.floor(kernelSize / 2);
-      const value = Math.exp(-(x * x) / (2 * sigma * sigma));
-      kernel[i] = value;
-      sum += value;
-    }
-    
-    // Normalize kernel
-    for (let i = 0; i < kernelSize; i++) {
-      kernel[i] /= sum;
-    }
-    
-    // Apply horizontal blur
-    const temp = new Float32Array(width * height);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let value = 0;
-        for (let k = 0; k < kernelSize; k++) {
-          const sx = x + k - Math.floor(kernelSize / 2);
-          if (sx >= 0 && sx < width) {
-            value += data[y * width + sx] * kernel[k];
-          }
-        }
-        temp[y * width + x] = value;
+    try {
+      // Simple Gaussian blur implementation
+      const kernelSize = Math.min(Math.ceil(sigma * 3) * 2 + 1, 15); // Limit kernel size
+      const kernel: number[] = [];
+      let sum = 0;
+      
+      for (let i = 0; i < kernelSize; i++) {
+        const x = i - Math.floor(kernelSize / 2);
+        const value = Math.exp(-(x * x) / (2 * sigma * sigma));
+        kernel[i] = value;
+        sum += value;
       }
-    }
-    
-    // Apply vertical blur
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let value = 0;
-        for (let k = 0; k < kernelSize; k++) {
-          const sy = y + k - Math.floor(kernelSize / 2);
-          if (sy >= 0 && sy < height) {
-            value += temp[sy * width + x] * kernel[k];
-          }
-        }
-        data[y * width + x] = value;
+      
+      // Normalize kernel
+      for (let i = 0; i < kernelSize; i++) {
+        kernel[i] /= sum;
       }
+      
+      // Apply horizontal blur
+      const temp = new Float32Array(width * height);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let value = 0;
+          for (let k = 0; k < kernelSize; k++) {
+            const sx = x + k - Math.floor(kernelSize / 2);
+            if (sx >= 0 && sx < width) {
+              value += (data[y * width + sx] || 0) * kernel[k];
+            }
+          }
+          temp[y * width + x] = Math.min(1, Math.max(0, value));
+        }
+      }
+      
+      // Apply vertical blur
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let value = 0;
+          for (let k = 0; k < kernelSize; k++) {
+            const sy = y + k - Math.floor(kernelSize / 2);
+            if (sy >= 0 && sy < height) {
+              value += (temp[sy * width + x] || 0) * kernel[k];
+            }
+          }
+          data[y * width + x] = Math.min(1, Math.max(0, value));
+        }
+      }
+      
+      console.log('Gaussian blur completed successfully');
+    } catch (err) {
+      console.error('Gaussian blur error:', err);
+      throw err;
     }
   };
 
@@ -323,6 +517,7 @@ export default function AdHeatmapPage() {
     setImage(null);
     setHeatmapData(null);
     setError(null);
+    setFallbackMode(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -402,6 +597,9 @@ export default function AdHeatmapPage() {
                       {isProcessing && (
                         <p className="text-xs sm:text-sm text-text-secondary">Heatmap wird berechnet...</p>
                       )}
+                      {fallbackMode && (
+                        <p className="text-xs sm:text-sm text-yellow-400">Einfache Heatmap verwendet</p>
+                      )}
                     </div>
                     <Button 
                       variant="ghost" 
@@ -416,7 +614,11 @@ export default function AdHeatmapPage() {
               )}
               
               {error && (
-                <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                <div className={`mt-3 p-3 rounded-lg text-sm ${
+                  fallbackMode 
+                    ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' 
+                    : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                }`}>
                   {error}
                 </div>
               )}
