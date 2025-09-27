@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "postbuild": "next-sitemap"
+    "postbuild": ""
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",
