@@ -470,7 +470,7 @@ export default function SafeZonePage() {
           <CardContent>
             {image && imageSpecs ? (
               <div className="space-y-4">
-                <div className="flex justify-center">
+                <div className="flex justify-center px-2 sm:px-0">
                   <FrameContainer 
                     config={currentConfig}
                     image={image}
@@ -559,22 +559,43 @@ function FrameContainer({
   isRatioMismatch 
 }: FrameContainerProps) {
   const frameRef = useRef<HTMLDivElement>(null);
+  const [frameDimensions, setFrameDimensions] = useState({ width: 320, height: 568 });
   
-  // Berechne Frame-Größe basierend auf verfügbarem Platz
-  const frameWidth = Math.min(350, typeof window !== 'undefined' ? window.innerWidth * 0.35 : 350);
-  const frameHeight = (frameWidth * config.height) / config.width;
+  // Berechne Frame-Größe basierend auf verfügbarem Platz - größer auf Mobile
+  const calculateDimensions = useCallback(() => {
+    if (typeof window === 'undefined') return { width: 320, height: 568 };
+    
+    const isMobile = window.innerWidth < 768;
+    const frameWidth = isMobile 
+      ? Math.min(320, window.innerWidth * 0.85) // 85% auf Mobile
+      : Math.min(350, window.innerWidth * 0.35); // 35% auf Desktop
+    const frameHeight = (frameWidth * config.height) / config.width;
+    
+    return { width: frameWidth, height: frameHeight };
+  }, [config.height, config.width]);
+  
+  useEffect(() => {
+    const updateDimensions = () => {
+      setFrameDimensions(calculateDimensions());
+    };
+    
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, [calculateDimensions]);
   
   return (
     <div className="relative">
       {/* Frame Container - Fester Container mit exaktem Seitenverhältnis */}
       <div 
         ref={frameRef}
-        className="relative bg-black rounded-lg overflow-hidden"
+        className="relative bg-black rounded-lg overflow-hidden mx-auto"
         style={{ 
-          width: `${frameWidth}px`,
-          height: `${frameHeight}px`,
+          width: `${frameDimensions.width}px`,
+          height: `${frameDimensions.height}px`,
           border: '2px solid #3bd0ff',
-          boxShadow: '0 4px 20px rgba(59, 208, 255, 0.2)'
+          boxShadow: '0 4px 20px rgba(59, 208, 255, 0.2)',
+          maxWidth: '100%' // Ensure it doesn't overflow on very small screens
         }}
       >
         {/* Bild/Video - IMMER in Frame geladen */}
