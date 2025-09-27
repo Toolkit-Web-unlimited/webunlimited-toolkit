@@ -1,0 +1,18 @@
+# Build outputs
+.next/
+dist/
+out/
+
+# Dependencies
+node_modules/
+
+# Environment files
+.env*
+
+# Old tool pages (temporarily hidden)
+src/app/ad-estimator/
+src/app/contrast-checker/
+src/app/copy-booster/
+
+# Generated files
+*.tsbuildinfo
