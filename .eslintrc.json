@@ -1,20 +1,8 @@
 {
+  "root": true,
   "extends": ["next/core-web-vitals"],
-  "parser": "@typescript-eslint/parser",
-  "plugins": ["@typescript-eslint"],
   "rules": {
-    "@typescript-eslint/no-unused-vars": "warn",
-    "@typescript-eslint/no-explicit-any": "off",
-    "prefer-const": "warn",
-    "react/no-unescaped-entities": "off",
-    "@next/next/no-img-element": "warn",
-    "jsx-a11y/alt-text": "warn",
-    "react-hooks/rules-of-hooks": "warn"
+    "@next/next/no-img-element": "off",
+    "react/no-unescaped-entities": "off"
   }
 }
-
-
-
-
-
-
