@@ -177,43 +177,43 @@ export default function SiteAnalyzerPage() {
 
         {/* Results Section */}
         {analysis && (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Score Overview */}
             <Card className="card-custom">
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
                   <span className="flex items-center space-x-2">
-                    <Globe className="w-5 h-5" />
-                    <span>SEO-Score</span>
+                    <Globe className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <span className="text-sm sm:text-base">SEO-Score</span>
                   </span>
-                  <span className="text-3xl font-bold gradient-text">{analysis.score}/100</span>
+                  <span className="text-2xl sm:text-3xl font-bold gradient-text">{analysis.score}/100</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="w-full bg-surface-secondary rounded-full h-4 mb-4">
+                <div className="w-full bg-surface-secondary rounded-full h-3 sm:h-4 mb-3 sm:mb-4">
                   <div 
-                    className="bg-gradient-to-r from-accent to-blue-400 h-4 rounded-full transition-all duration-500"
+                    className="bg-gradient-to-r from-accent to-blue-400 h-3 sm:h-4 rounded-full transition-all duration-500"
                     style={{ width: `${analysis.score}%` }}
                   ></div>
                 </div>
                 
                 <div className="flex items-center space-x-2">
                   {analysis.score >= 80 ? (
-                    <CheckCircle className="w-5 h-5 text-green-400" />
+                    <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-green-400" />
                   ) : analysis.score >= 60 ? (
-                    <AlertCircle className="w-5 h-5 text-yellow-400" />
+                    <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" />
                   ) : (
-                    <AlertCircle className="w-5 h-5 text-red-400" />
+                    <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-400" />
                   )}
-                  <span className="text-sm">
+                  <span className="text-xs sm:text-sm">
                     {analysis.score >= 80 ? 'Sehr gut optimiert' : 
                      analysis.score >= 60 ? 'Gut optimiert' : 
                      'Verbesserungswürdig'}
                   </span>
                 </div>
                 
-                <div className="mt-4 text-sm text-text-secondary">
-                  <p><strong>Analysierte URL:</strong> {analysis.url}</p>
+                <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-text-secondary">
+                  <p className="break-all"><strong>Analysierte URL:</strong> {analysis.url}</p>
                 </div>
               </CardContent>
             </Card>
@@ -228,23 +228,23 @@ export default function SiteAnalyzerPage() {
               </TabsList>
               
               <TabsContent value="meta" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <Card className="card-custom">
                     <CardHeader>
-                      <CardTitle className="flex items-center space-x-2 text-lg">
-                        <FileText className="w-5 h-5" />
-                        <span>Title-Tag</span>
+                      <CardTitle className="flex items-center space-x-2 text-base sm:text-lg">
+                        <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <span className="truncate">Title-Tag</span>
                         {analysis.title.optimal ? (
-                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                         )}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2">
-                        <p className="text-sm font-medium">Text:</p>
-                        <p className="text-sm text-text-secondary bg-surface-secondary p-2 rounded">
+                        <p className="text-xs sm:text-sm font-medium">Text:</p>
+                        <p className="text-xs sm:text-sm text-text-secondary bg-surface-secondary p-2 sm:p-3 rounded break-words">
                           {analysis.title.text || 'Nicht gefunden'}
                         </p>
                         <p className="text-xs text-text-muted">
@@ -257,20 +257,20 @@ export default function SiteAnalyzerPage() {
 
                   <Card className="card-custom">
                     <CardHeader>
-                      <CardTitle className="flex items-center space-x-2 text-lg">
-                        <FileText className="w-5 h-5" />
-                        <span>Meta-Description</span>
+                      <CardTitle className="flex items-center space-x-2 text-base sm:text-lg">
+                        <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <span className="truncate">Meta-Description</span>
                         {analysis.description.optimal ? (
-                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                         )}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2">
-                        <p className="text-sm font-medium">Text:</p>
-                        <p className="text-sm text-text-secondary bg-surface-secondary p-2 rounded">
+                        <p className="text-xs sm:text-sm font-medium">Text:</p>
+                        <p className="text-xs sm:text-sm text-text-secondary bg-surface-secondary p-2 sm:p-3 rounded break-words">
                           {analysis.description.text || 'Nicht gefunden'}
                         </p>
                         <p className="text-xs text-text-muted">
@@ -287,19 +287,19 @@ export default function SiteAnalyzerPage() {
                 <Card className="card-custom">
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <FileText className="w-5 h-5" />
-                      <span>H1-Tag</span>
+                      <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span className="text-sm sm:text-base">H1-Tag</span>
                       {analysis.h1.present ? (
-                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                       ) : (
-                        <AlertCircle className="w-4 h-4 text-red-400" />
+                        <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                       )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      <p className="text-sm font-medium">Text:</p>
-                      <p className="text-sm text-text-secondary bg-surface-secondary p-2 rounded">
+                      <p className="text-xs sm:text-sm font-medium">Text:</p>
+                      <p className="text-xs sm:text-sm text-text-secondary bg-surface-secondary p-2 sm:p-3 rounded break-words">
                         {analysis.h1.text || 'Nicht gefunden'}
                       </p>
                     </div>
@@ -311,34 +311,34 @@ export default function SiteAnalyzerPage() {
                 <Card className="card-custom">
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <Image className="w-5 h-5" />
-                      <span>Open Graph Tags</span>
+                      <Image className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span className="text-sm sm:text-base">Open Graph Tags</span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm">og:title</span>
+                        <span className="text-xs sm:text-sm">og:title</span>
                         {analysis.ogTags.title ? (
-                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                         )}
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm">og:description</span>
+                        <span className="text-xs sm:text-sm">og:description</span>
                         {analysis.ogTags.description ? (
-                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                         )}
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm">og:image</span>
+                        <span className="text-xs sm:text-sm">og:image</span>
                         {analysis.ogTags.image ? (
-                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                         )}
                       </div>
                     </div>
@@ -350,22 +350,22 @@ export default function SiteAnalyzerPage() {
                 <Card className="card-custom">
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <Code className="w-5 h-5" />
-                      <span>Assets</span>
+                      <Code className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span className="text-sm sm:text-base">Assets</span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div>
-                        <p className="text-2xl font-bold text-accent">{analysis.assets.totalSizeKB}KB</p>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+                      <div className="p-2 sm:p-3 bg-surface-secondary rounded-lg">
+                        <p className="text-lg sm:text-2xl font-bold text-accent">{analysis.assets.totalSizeKB}KB</p>
                         <p className="text-xs text-text-muted">Gesamtgröße</p>
                       </div>
-                      <div>
-                        <p className="text-2xl font-bold text-accent">{analysis.assets.cssCount}</p>
+                      <div className="p-2 sm:p-3 bg-surface-secondary rounded-lg">
+                        <p className="text-lg sm:text-2xl font-bold text-accent">{analysis.assets.cssCount}</p>
                         <p className="text-xs text-text-muted">CSS-Dateien</p>
                       </div>
-                      <div>
-                        <p className="text-2xl font-bold text-accent">{analysis.assets.jsCount}</p>
+                      <div className="p-2 sm:p-3 bg-surface-secondary rounded-lg">
+                        <p className="text-lg sm:text-2xl font-bold text-accent">{analysis.assets.jsCount}</p>
                         <p className="text-xs text-text-muted">JS-Dateien</p>
                       </div>
                     </div>
@@ -376,21 +376,21 @@ export default function SiteAnalyzerPage() {
 
             {/* Issues and Suggestions */}
             {(analysis.issues.length > 0 || analysis.suggestions.length > 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-4 sm:gap-6">
                 {analysis.issues.length > 0 && (
                   <Card className="card-custom border-red-500/20">
                     <CardHeader>
                       <CardTitle className="flex items-center space-x-2 text-red-400">
-                        <AlertCircle className="w-5 h-5" />
-                        <span>Identifizierte Probleme</span>
+                        <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
+                        <span className="text-sm sm:text-base">Identifizierte Probleme</span>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <ul className="space-y-2">
                         {analysis.issues.map((issue, index) => (
-                          <li key={index} className="text-sm flex items-start space-x-2">
-                            <span className="text-red-400 mt-0.5">•</span>
-                            <span>{issue}</span>
+                          <li key={index} className="text-xs sm:text-sm flex items-start space-x-2">
+                            <span className="text-red-400 mt-0.5 flex-shrink-0">•</span>
+                            <span className="break-words">{issue}</span>
                           </li>
                         ))}
                       </ul>
@@ -402,16 +402,16 @@ export default function SiteAnalyzerPage() {
                   <Card className="card-custom border-blue-500/20">
                     <CardHeader>
                       <CardTitle className="flex items-center space-x-2 text-blue-400">
-                        <Info className="w-5 h-5" />
-                        <span>Optimierungsvorschläge</span>
+                        <Info className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
+                        <span className="text-sm sm:text-base">Optimierungsvorschläge</span>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <ul className="space-y-2">
                         {analysis.suggestions.map((suggestion, index) => (
-                          <li key={index} className="text-sm flex items-start space-x-2">
-                            <span className="text-blue-400 mt-0.5">•</span>
-                            <span>{suggestion}</span>
+                          <li key={index} className="text-xs sm:text-sm flex items-start space-x-2">
+                            <span className="text-blue-400 mt-0.5 flex-shrink-0">•</span>
+                            <span className="break-words">{suggestion}</span>
                           </li>
                         ))}
                       </ul>
@@ -424,7 +424,7 @@ export default function SiteAnalyzerPage() {
             {/* Copy Report Button */}
             <Button 
               onClick={copyReport}
-              className="w-full"
+              className="w-full text-sm sm:text-base"
               variant="outline"
             >
               {copied ? (
@@ -444,9 +444,9 @@ export default function SiteAnalyzerPage() {
 
         {!analysis && !loading && (
           <Card className="card-custom">
-            <CardContent className="text-center py-12">
-              <Search className="w-12 h-12 text-text-muted mx-auto mb-4" />
-              <p className="text-text-secondary">
+            <CardContent className="text-center py-8 sm:py-12">
+              <Search className="w-8 h-8 sm:w-12 sm:h-12 text-text-muted mx-auto mb-3 sm:mb-4" />
+              <p className="text-text-secondary text-sm sm:text-base px-4">
                 Gib eine URL ein und klicke &quot;Analysieren&quot;, um eine SEO-Analyse zu starten.
               </p>
             </CardContent>
