@@ -289,8 +289,9 @@ class ProfessionalSaliencyProcessor {
   }
 
   applyMultiScaleBlur(data) {
-    // Apply multiple Gaussian blurs for smooth blob-like appearance
-    const scales = [2, 4, 8];
+    // Apply selective blur for classic eye-tracking appearance
+    // Less blur to create clear red islands instead of uniform smoothness
+    const scales = [1, 2]; // Reduced blur scales
     const blurred = new Float32Array(this.width * this.height);
     
     for (const scale of scales) {
@@ -354,14 +355,18 @@ class ProfessionalSaliencyProcessor {
 
   normalizeRobust(data) {
     const sorted = Array.from(data).sort((a, b) => a - b);
-    const p1 = sorted[Math.floor(sorted.length * 0.01)];
-    const p99 = sorted[Math.floor(sorted.length * 0.99)];
-    const range = p99 - p1;
+    const p5 = sorted[Math.floor(sorted.length * 0.05)]; // More aggressive threshold
+    const p95 = sorted[Math.floor(sorted.length * 0.95)]; // More aggressive threshold
+    const range = p95 - p5;
     
     if (range === 0) return;
     
+    // Apply power curve for more contrast between hot and cold areas
     for (let i = 0; i < data.length; i++) {
-      data[i] = Math.min(1, Math.max(0, (data[i] - p1) / range));
+      let normalized = Math.min(1, Math.max(0, (data[i] - p5) / range));
+      // Power curve to enhance contrast: hot areas become hotter, cold areas become colder
+      normalized = Math.pow(normalized, 0.7); // 0.7 creates more contrast
+      data[i] = normalized;
     }
   }
 

@@ -38,7 +38,7 @@ const generateFallbackHeatmap = (imageData: ImageData, width: number, height: nu
     saliency[i] = brightness;
   }
   
-  // Simple hotspot detection
+  // Simple hotspot detection with numbered order
   const hotspots = [];
   const centerX = width / 2;
   const centerY = height / 2;
@@ -51,7 +51,7 @@ const generateFallbackHeatmap = (imageData: ImageData, width: number, height: nu
     hotspots.push({
       x: Math.round(x),
       y: Math.round(y),
-      percentage: 15 - i * 3 // Decreasing percentages
+      percentage: Math.max(8, 18 - i * 4) // Decreasing percentages: 18%, 14%, 10%
     });
   }
   
@@ -256,27 +256,30 @@ export default function AdHeatmapPage() {
   };
 
   const viridisColor = (t: number) => {
+    // Enhanced contrast for classic eye-tracking appearance
+    const enhancedT = Math.pow(t, 0.8); // Enhance contrast
+    
     const c0 = [0.267, 0.005, 0.329];
     const c1 = [0.127, 0.422, 0.557];
     const c2 = [0.369, 0.673, 0.364];
     const c3 = [0.988, 0.998, 0.745];
     
-    if (t < 0.33) {
-      const local = t * 3;
+    if (enhancedT < 0.33) {
+      const local = enhancedT * 3;
       return {
         r: Math.round((c0[0] * (1 - local) + c1[0] * local) * 255),
         g: Math.round((c0[1] * (1 - local) + c1[1] * local) * 255),
         b: Math.round((c0[2] * (1 - local) + c1[2] * local) * 255)
       };
-    } else if (t < 0.67) {
-      const local = (t - 0.33) * 3;
+    } else if (enhancedT < 0.67) {
+      const local = (enhancedT - 0.33) * 3;
       return {
         r: Math.round((c1[0] * (1 - local) + c2[0] * local) * 255),
         g: Math.round((c1[1] * (1 - local) + c2[1] * local) * 255),
         b: Math.round((c1[2] * (1 - local) + c2[2] * local) * 255)
       };
     } else {
-      const local = (t - 0.67) * 3;
+      const local = (enhancedT - 0.67) * 3;
       return {
         r: Math.round((c2[0] * (1 - local) + c3[0] * local) * 255),
         g: Math.round((c2[1] * (1 - local) + c3[1] * local) * 255),
@@ -286,35 +289,38 @@ export default function AdHeatmapPage() {
   };
 
   const turboColor = (t: number) => {
+    // Enhanced contrast for classic eye-tracking appearance
+    const enhancedT = Math.pow(t, 0.75); // Stronger contrast enhancement
+    
     const c0 = [0.190, 0.072, 0.232];
     const c1 = [0.208, 0.565, 0.792];
     const c2 = [0.566, 0.853, 0.318];
     const c3 = [0.985, 0.763, 0.217];
     const c4 = [0.941, 0.141, 0.000];
     
-    if (t < 0.25) {
-      const local = t * 4;
+    if (enhancedT < 0.25) {
+      const local = enhancedT * 4;
       return {
         r: Math.round((c0[0] * (1 - local) + c1[0] * local) * 255),
         g: Math.round((c0[1] * (1 - local) + c1[1] * local) * 255),
         b: Math.round((c0[2] * (1 - local) + c1[2] * local) * 255)
       };
-    } else if (t < 0.5) {
-      const local = (t - 0.25) * 4;
+    } else if (enhancedT < 0.5) {
+      const local = (enhancedT - 0.25) * 4;
       return {
         r: Math.round((c1[0] * (1 - local) + c2[0] * local) * 255),
         g: Math.round((c1[1] * (1 - local) + c2[1] * local) * 255),
         b: Math.round((c1[2] * (1 - local) + c2[2] * local) * 255)
       };
-    } else if (t < 0.75) {
-      const local = (t - 0.5) * 4;
+    } else if (enhancedT < 0.75) {
+      const local = (enhancedT - 0.5) * 4;
       return {
         r: Math.round((c2[0] * (1 - local) + c3[0] * local) * 255),
         g: Math.round((c2[1] * (1 - local) + c3[1] * local) * 255),
         b: Math.round((c2[2] * (1 - local) + c3[2] * local) * 255)
       };
     } else {
-      const local = (t - 0.75) * 4;
+      const local = (enhancedT - 0.75) * 4;
       return {
         r: Math.round((c3[0] * (1 - local) + c4[0] * local) * 255),
         g: Math.round((c3[1] * (1 - local) + c4[1] * local) * 255),
@@ -324,6 +330,9 @@ export default function AdHeatmapPage() {
   };
 
   const infernoColor = (t: number) => {
+    // Enhanced contrast for classic eye-tracking appearance
+    const enhancedT = Math.pow(t, 0.7); // Strong contrast enhancement
+    
     const c0 = [0.000, 0.000, 0.015];
     const c1 = [0.144, 0.006, 0.420];
     const c2 = [0.411, 0.024, 0.609];
@@ -331,36 +340,36 @@ export default function AdHeatmapPage() {
     const c4 = [0.891, 0.498, 0.275];
     const c5 = [1.000, 0.901, 0.000];
     
-    if (t < 0.2) {
-      const local = t * 5;
+    if (enhancedT < 0.2) {
+      const local = enhancedT * 5;
       return {
         r: Math.round((c0[0] * (1 - local) + c1[0] * local) * 255),
         g: Math.round((c0[1] * (1 - local) + c1[1] * local) * 255),
         b: Math.round((c0[2] * (1 - local) + c1[2] * local) * 255)
       };
-    } else if (t < 0.4) {
-      const local = (t - 0.2) * 5;
+    } else if (enhancedT < 0.4) {
+      const local = (enhancedT - 0.2) * 5;
       return {
         r: Math.round((c1[0] * (1 - local) + c2[0] * local) * 255),
         g: Math.round((c1[1] * (1 - local) + c2[1] * local) * 255),
         b: Math.round((c1[2] * (1 - local) + c2[2] * local) * 255)
       };
-    } else if (t < 0.6) {
-      const local = (t - 0.4) * 5;
+    } else if (enhancedT < 0.6) {
+      const local = (enhancedT - 0.4) * 5;
       return {
         r: Math.round((c2[0] * (1 - local) + c3[0] * local) * 255),
         g: Math.round((c2[1] * (1 - local) + c3[1] * local) * 255),
         b: Math.round((c2[2] * (1 - local) + c3[2] * local) * 255)
       };
-    } else if (t < 0.8) {
-      const local = (t - 0.6) * 5;
+    } else if (enhancedT < 0.8) {
+      const local = (enhancedT - 0.6) * 5;
       return {
         r: Math.round((c3[0] * (1 - local) + c4[0] * local) * 255),
         g: Math.round((c3[1] * (1 - local) + c4[1] * local) * 255),
         b: Math.round((c3[2] * (1 - local) + c4[2] * local) * 255)
       };
     } else {
-      const local = (t - 0.8) * 5;
+      const local = (enhancedT - 0.8) * 5;
       return {
         r: Math.round((c4[0] * (1 - local) + c5[0] * local) * 255),
         g: Math.round((c4[1] * (1 - local) + c5[1] * local) * 255),
@@ -448,10 +457,10 @@ export default function AdHeatmapPage() {
     
     ctx.putImageData(imageData, 0, 0);
     
-    // Draw hotspot badges with professional styling
+    // Draw numbered hotspot badges with classic eye-tracking styling
     if (insights.hotspots.length > 0) {
-      ctx.font = 'bold 18px Arial';
-      ctx.textAlign = 'center';
+      ctx.font = 'bold 14px Arial';
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       
       insights.hotspots.forEach((hotspot, index) => {
@@ -459,32 +468,39 @@ export default function AdHeatmapPage() {
         const x = (canvasPos.x / img.getBoundingClientRect().width) * img.naturalWidth;
         const y = (canvasPos.y / img.getBoundingClientRect().height) * img.naturalHeight;
         
-        // Professional badge styling with glow
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 15;
+        // Numbered marker with classic eye-tracking styling
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 8;
         
-        // Badge background with gradient effect
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, 25);
-        gradient.addColorStop(0, `hsla(${index * 120 + 30}, 80%, 60%, 0.9)`);
-        gradient.addColorStop(1, `hsla(${index * 120 + 30}, 80%, 40%, 0.9)`);
-        
-        ctx.fillStyle = gradient;
+        // Small numbered circle
+        ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(x, y, 25, 0, Math.PI * 2);
+        ctx.arc(x, y, 12, 0, Math.PI * 2);
         ctx.fill();
         
-        // Badge border
+        // Black border
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(x, y, 25, 0, Math.PI * 2);
+        ctx.arc(x, y, 12, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Badge text
+        // Number inside circle
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText((index + 1).toString(), x, y);
+        
+        // Percentage text next to marker
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 4;
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 16px Arial';
-        ctx.fillText(`${hotspot.percentage}%`, x, y);
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${index + 1} – ${hotspot.percentage}%`, x + 18, y);
       });
     }
     
@@ -568,7 +584,7 @@ export default function AdHeatmapPage() {
     },
     {
       question: 'Wie werden Hotspot-Badges berechnet?',
-      answer: 'Hotspots werden durch Non-Maximum Suppression gefunden. Der Prozentsatz zeigt die relative Energie in einem Kreis um jeden Hotspot - ähnlich wie in professionellen Predictive-Tools.'
+      answer: 'Hotspots werden durch Non-Maximum Suppression gefunden und nummeriert (1, 2, 3) nach Score sortiert. Die Nummern zeigen die Reihenfolge der Aufmerksamkeit: "Hier schauen Leute zuerst hin, dann dorthin, dann dorthin".'
     },
     {
       question: 'Werden meine Bilder gespeichert?',
@@ -821,9 +837,12 @@ export default function AdHeatmapPage() {
                       {insights.hotspots.map((hotspot, index) => (
                         <div
                           key={index}
-                          className="px-3 py-1 bg-accent/20 text-accent rounded-full text-xs sm:text-sm font-medium"
+                          className="flex items-center space-x-2 px-3 py-1 bg-accent/20 text-accent rounded-full text-xs sm:text-sm font-medium"
                         >
-                          {hotspot.percentage}%
+                          <div className="w-4 h-4 bg-white border-2 border-accent rounded-full flex items-center justify-center text-black text-xs font-bold">
+                            {index + 1}
+                          </div>
+                          <span>{index + 1} – {hotspot.percentage}%</span>
                         </div>
                       ))}
                     </div>
