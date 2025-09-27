@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PrivacyNote } from '@/components/PrivacyNote';
 import { Faq } from '@/components/Faq';
-import { Upload, X, Download, Eye, EyeOff } from 'lucide-react';
+import { Upload, X, Download, Eye, EyeOff, RefreshCw } from 'lucide-react';
 
 interface Hotspot {
   x: number;
@@ -17,27 +17,68 @@ interface Hotspot {
 
 interface Insights {
   focusScore: number;
-  thirdsMatch: number;
   hotspots: Hotspot[];
 }
 
-type Palette = 'viridis' | 'turbo' | 'classic';
+type Palette = 'viridis' | 'turbo' | 'inferno';
+type Mode = 'scientific' | 'marketing';
 
 export default function AdHeatmapPage() {
   const [image, setImage] = useState<string | null>(null);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.7);
   const [showHeatmap, setShowHeatmap] = useState(true);
-  const [palette, setPalette] = useState<Palette>('viridis');
+  const [palette, setPalette] = useState<Palette>('turbo');
+  const [mode, setMode] = useState<Mode>('marketing');
   const [hotspotCount, setHotspotCount] = useState(3);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
+  const [progress, setProgress] = useState<{ step: string; progress: number } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const heatmapCanvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
+  const workerRef = useRef<Worker | null>(null);
   const saliencyDataRef = useRef<Float32Array | null>(null);
+  const imageMappingRef = useRef<{
+    imageX: number;
+    imageY: number;
+    imageWidth: number;
+    imageHeight: number;
+    canvasWidth: number;
+    canvasHeight: number;
+  } | null>(null);
+
+  // Initialize worker
+  useEffect(() => {
+    if (typeof Worker !== 'undefined') {
+      workerRef.current = new Worker(new URL('./heatmap-worker.ts', import.meta.url), { type: 'module' });
+      
+      workerRef.current.onmessage = (e) => {
+        if (e.data.type === 'progress') {
+          setProgress({ step: e.data.data.step, progress: e.data.data.progress });
+        } else if (e.data.type === 'complete') {
+          const { saliency, hotspots, focusScore } = e.data.data;
+          saliencyDataRef.current = saliency;
+          setInsights({ focusScore, hotspots });
+          updateHeatmapDisplay();
+          setIsProcessing(false);
+          setProgress(null);
+        } else if (e.data.type === 'error') {
+          setError(`Heatmap-Berechnung fehlgeschlagen: ${e.data.data.error}`);
+          setIsProcessing(false);
+          setProgress(null);
+        }
+      };
+    }
+
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+      }
+    };
+  }, []);
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -55,311 +96,94 @@ export default function AdHeatmapPage() {
 
     setError(null);
     setIsProcessing(true);
+    setProgress({ step: 'Bild wird geladen...', progress: 0 });
 
     try {
       const imageBitmap = await createImageBitmap(file);
       const imageUrl = URL.createObjectURL(file);
       setImage(imageUrl);
 
-      const saliency = await computeSaliency(imageBitmap);
-      saliencyDataRef.current = saliency;
+      // Process image for worker
+      const canvas = hiddenCanvasRef.current!;
+      const ctx = canvas.getContext('2d')!;
       
-      const computedInsights = computeInsights(saliency, imageBitmap.width, imageBitmap.height, hotspotCount);
-      setInsights(computedInsights);
+      // Downscale to optimal size (256-384px on longest edge)
+      const maxSize = 384;
+      const ratio = Math.min(maxSize / imageBitmap.width, maxSize / imageBitmap.height);
+      const width = Math.round(imageBitmap.width * ratio);
+      const height = Math.round(imageBitmap.height * ratio);
       
-      updateHeatmapDisplay();
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(imageBitmap, 0, 0, width, height);
+      
+      const imageData = ctx.getImageData(0, 0, width, height);
+      
+      // Store mapping for coordinate conversion
+      imageMappingRef.current = {
+        imageX: 0,
+        imageY: 0,
+        imageWidth: imageBitmap.width,
+        imageHeight: imageBitmap.height,
+        canvasWidth: width,
+        canvasHeight: height
+      };
+
+      // Start worker processing
+      if (workerRef.current) {
+        workerRef.current.postMessage({
+          type: 'process',
+          data: {
+            imageData,
+            width,
+            height,
+            mode,
+            hotspotCount
+          }
+        });
+      } else {
+        throw new Error('WebWorker nicht verfügbar');
+      }
       
     } catch (err) {
       console.error('Image processing error:', err);
       setError(`Fehler bei der Bildverarbeitung: ${err instanceof Error ? err.message : 'Unbekannter Fehler'}`);
-    } finally {
       setIsProcessing(false);
+      setProgress(null);
     }
-  }, [hotspotCount]);
+  }, [mode, hotspotCount]);
 
-  const computeSaliency = async (imageBitmap: ImageBitmap): Promise<Float32Array> => {
-    const canvas = hiddenCanvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
+  const mapCoordinatesToImage = useCallback((canvasX: number, canvasY: number) => {
+    if (!imageMappingRef.current || !imageRef.current) return { x: 0, y: 0 };
     
-    // Downscale to 256px on longest edge
-    const maxSize = 256;
-    const ratio = Math.min(maxSize / imageBitmap.width, maxSize / imageBitmap.height);
-    const width = Math.round(imageBitmap.width * ratio);
-    const height = Math.round(imageBitmap.height * ratio);
+    const mapping = imageMappingRef.current;
+    const img = imageRef.current;
+    const rect = img.getBoundingClientRect();
     
-    canvas.width = width;
-    canvas.height = height;
-    ctx.drawImage(imageBitmap, 0, 0, width, height);
+    // Calculate actual image position within the canvas
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
     
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
+    // Convert canvas coordinates to image coordinates
+    const imageX = canvasX * (mapping.canvasWidth / mapping.imageWidth) * scaleX;
+    const imageY = canvasY * (mapping.canvasHeight / mapping.imageHeight) * scaleY;
     
-    // Sobel edge detection
-    const edges = computeSobelEdges(data, width, height);
-    
-    // Saturation analysis
-    const saturation = computeSaturation(data, width, height);
-    
-    // Fusion: 0.7*edges + 0.3*saturation
-    const saliency = new Float32Array(width * height);
-    for (let i = 0; i < width * height; i++) {
-      saliency[i] = 0.7 * edges[i] + 0.3 * saturation[i];
-    }
-    
-    // Gaussian blur
-    applyGaussianBlur(saliency, width, height, Math.min(width, height) * 0.01);
-    
-    // Robust normalization (percentiles 1-99)
-    normalizePercentiles(saliency);
-    
-    return saliency;
-  };
+    return { x: imageX, y: imageY };
+  }, []);
 
-  const computeSobelEdges = (data: Uint8ClampedArray, width: number, height: number): Float32Array => {
-    const edges = new Float32Array(width * height);
+  const mapCoordinatesToCanvas = useCallback((imageX: number, imageY: number) => {
+    if (!imageMappingRef.current || !imageRef.current) return { x: 0, y: 0 };
     
-    // Sobel kernels
-    const gx = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
-    const gy = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
+    const mapping = imageMappingRef.current;
+    const img = imageRef.current;
+    const rect = img.getBoundingClientRect();
     
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-        let gxSum = 0, gySum = 0;
-        
-        for (let ky = -1; ky <= 1; ky++) {
-          for (let kx = -1; kx <= 1; kx++) {
-            const idx = ((y + ky) * width + (x + kx)) * 4;
-            const gray = (data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114) / 255;
-            const kernelIdx = (ky + 1) * 3 + (kx + 1);
-            
-            gxSum += gray * gx[kernelIdx];
-            gySum += gray * gy[kernelIdx];
-          }
-        }
-        
-        edges[y * width + x] = Math.sqrt(gxSum * gxSum + gySum * gySum);
-      }
-    }
+    // Convert image coordinates to canvas coordinates
+    const canvasX = (imageX / mapping.canvasWidth) * (mapping.imageWidth / img.naturalWidth) * rect.width;
+    const canvasY = (imageY / mapping.canvasHeight) * (mapping.imageHeight / img.naturalHeight) * rect.height;
     
-    return edges;
-  };
-
-  const computeSaturation = (data: Uint8ClampedArray, width: number, height: number): Float32Array => {
-    const saturation = new Float32Array(width * height);
-    
-    for (let i = 0; i < width * height; i++) {
-      const r = data[i * 4] / 255;
-      const g = data[i * 4 + 1] / 255;
-      const b = data[i * 4 + 2] / 255;
-      
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      const delta = max - min;
-      
-      saturation[i] = max === 0 ? 0 : delta / max;
-    }
-    
-    return saturation;
-  };
-
-  const applyGaussianBlur = (data: Float32Array, width: number, height: number, sigma: number) => {
-    const kernelSize = Math.min(Math.ceil(sigma * 3) * 2 + 1, 15);
-    const kernel: number[] = [];
-    let sum = 0;
-    
-    for (let i = 0; i < kernelSize; i++) {
-      const x = i - Math.floor(kernelSize / 2);
-      const value = Math.exp(-(x * x) / (2 * sigma * sigma));
-      kernel[i] = value;
-      sum += value;
-    }
-    
-    for (let i = 0; i < kernelSize; i++) {
-      kernel[i] /= sum;
-    }
-    
-    // Horizontal blur
-    const temp = new Float32Array(width * height);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let value = 0;
-        for (let k = 0; k < kernelSize; k++) {
-          const sx = x + k - Math.floor(kernelSize / 2);
-          if (sx >= 0 && sx < width) {
-            value += data[y * width + sx] * kernel[k];
-          }
-        }
-        temp[y * width + x] = value;
-      }
-    }
-    
-    // Vertical blur
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let value = 0;
-        for (let k = 0; k < kernelSize; k++) {
-          const sy = y + k - Math.floor(kernelSize / 2);
-          if (sy >= 0 && sy < height) {
-            value += temp[sy * width + x] * kernel[k];
-          }
-        }
-        data[y * width + x] = value;
-      }
-    }
-  };
-
-  const normalizePercentiles = (data: Float32Array) => {
-    const sorted = Array.from(data).sort((a, b) => a - b);
-    const p1 = sorted[Math.floor(sorted.length * 0.01)];
-    const p99 = sorted[Math.floor(sorted.length * 0.99)];
-    const range = p99 - p1;
-    
-    if (range === 0) return;
-    
-    for (let i = 0; i < data.length; i++) {
-      data[i] = Math.min(1, Math.max(0, (data[i] - p1) / range));
-    }
-  };
-
-  const findHotspots = (data: Float32Array, width: number, height: number, k: number): Hotspot[] => {
-    // Downscale for hotspot detection
-    const scale = 128 / Math.max(width, height);
-    const newWidth = Math.round(width * scale);
-    const newHeight = Math.round(height * scale);
-    
-    const downscaled = new Float32Array(newWidth * newHeight);
-    for (let y = 0; y < newHeight; y++) {
-      for (let x = 0; x < newWidth; x++) {
-        const origX = Math.round(x / scale);
-        const origY = Math.round(y / scale);
-        const idx = Math.min(origY * width + origX, data.length - 1);
-        downscaled[y * newWidth + x] = data[idx];
-      }
-    }
-    
-    // Find local maxima
-    const candidates: { x: number; y: number; value: number }[] = [];
-    const minDistance = Math.max(width, height) * 0.05;
-    
-    for (let y = 1; y < newHeight - 1; y++) {
-      for (let x = 1; x < newWidth - 1; x++) {
-        const idx = y * newWidth + x;
-        const value = downscaled[idx];
-        
-        // Check if it's a local maximum
-        let isMax = true;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            const neighborIdx = (y + dy) * newWidth + (x + dx);
-            if (downscaled[neighborIdx] >= value) {
-              isMax = false;
-              break;
-            }
-          }
-          if (!isMax) break;
-        }
-        
-        if (isMax && value > 0.1) {
-          candidates.push({
-            x: Math.round(x / scale),
-            y: Math.round(y / scale),
-            value
-          });
-        }
-      }
-    }
-    
-    // Sort by value and apply non-maximum suppression
-    candidates.sort((a, b) => b.value - a.value);
-    const hotspots: Hotspot[] = [];
-    
-    for (const candidate of candidates) {
-      let tooClose = false;
-      for (const hotspot of hotspots) {
-        const distance = Math.sqrt(
-          Math.pow(candidate.x - hotspot.x, 2) + Math.pow(candidate.y - hotspot.y, 2)
-        );
-        if (distance < minDistance) {
-          tooClose = true;
-          break;
-        }
-      }
-      
-      if (!tooClose) {
-        // Calculate percentage
-        const radius = Math.min(width, height) * 0.07;
-        let energy = 0;
-        let totalEnergy = 0;
-        
-        for (let py = 0; py < height; py++) {
-          for (let px = 0; px < width; px++) {
-            const distance = Math.sqrt(Math.pow(px - candidate.x, 2) + Math.pow(py - candidate.y, 2));
-            const value = data[py * width + px] || 0;
-            totalEnergy += value;
-            
-            if (distance <= radius) {
-              energy += value;
-            }
-          }
-        }
-        
-        const percentage = Math.round((energy / totalEnergy) * 100);
-        
-        hotspots.push({
-          x: candidate.x,
-          y: candidate.y,
-          percentage
-        });
-        
-        if (hotspots.length >= k) break;
-      }
-    }
-    
-    return hotspots;
-  };
-
-  const computeInsights = (data: Float32Array, width: number, height: number, k: number): Insights => {
-    // Focus Score: mean of top 15%
-    const sorted = Array.from(data).sort((a, b) => b - a);
-    const top15Count = Math.floor(sorted.length * 0.15);
-    const focusScore = Math.round(
-      sorted.slice(0, top15Count).reduce((sum, val) => sum + val, 0) / top15Count * 100
-    );
-    
-    // Rule of Thirds
-    const thirdW = width / 3;
-    const thirdH = height / 3;
-    const circleRadius = Math.min(width, height) * 0.03;
-    
-    const thirdsPoints = [
-      { x: thirdW, y: thirdH },
-      { x: thirdW * 2, y: thirdH },
-      { x: thirdW, y: thirdH * 2 },
-      { x: thirdW * 2, y: thirdH * 2 }
-    ];
-    
-    let thirdsEnergy = 0;
-    let totalEnergy = data.reduce((sum, val) => sum + val, 0);
-    
-    for (const point of thirdsPoints) {
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const distance = Math.sqrt(Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2));
-          if (distance <= circleRadius) {
-            thirdsEnergy += data[y * width + x] || 0;
-          }
-        }
-      }
-    }
-    
-    const thirdsMatch = Math.round((thirdsEnergy / totalEnergy) * 100);
-    
-    // Hotspots
-    const hotspots = findHotspots(data, width, height, k);
-    
-    return { focusScore, thirdsMatch, hotspots };
-  };
+    return { x: canvasX, y: canvasY };
+  }, []);
 
   const getPaletteColor = (value: number, palette: Palette): { r: number; g: number; b: number } => {
     const t = Math.max(0, Math.min(1, value));
@@ -369,10 +193,10 @@ export default function AdHeatmapPage() {
         return viridisColor(t);
       case 'turbo':
         return turboColor(t);
-      case 'classic':
-        return classicColor(t);
+      case 'inferno':
+        return infernoColor(t);
       default:
-        return viridisColor(t);
+        return turboColor(t);
     }
   };
 
@@ -444,28 +268,59 @@ export default function AdHeatmapPage() {
     }
   };
 
-  const classicColor = (t: number) => {
-    if (t < 0.25) {
-      const local = t * 4;
-      return { r: 0, g: Math.round(local * 255), b: 255 };
-    } else if (t < 0.5) {
-      const local = (t - 0.25) * 4;
-      return { r: 0, g: 255, b: Math.round((1 - local) * 255) };
-    } else if (t < 0.75) {
-      const local = (t - 0.5) * 4;
-      return { r: Math.round(local * 255), g: 255, b: 0 };
+  const infernoColor = (t: number) => {
+    const c0 = [0.000, 0.000, 0.015];
+    const c1 = [0.144, 0.006, 0.420];
+    const c2 = [0.411, 0.024, 0.609];
+    const c3 = [0.676, 0.218, 0.524];
+    const c4 = [0.891, 0.498, 0.275];
+    const c5 = [1.000, 0.901, 0.000];
+    
+    if (t < 0.2) {
+      const local = t * 5;
+      return {
+        r: Math.round((c0[0] * (1 - local) + c1[0] * local) * 255),
+        g: Math.round((c0[1] * (1 - local) + c1[1] * local) * 255),
+        b: Math.round((c0[2] * (1 - local) + c1[2] * local) * 255)
+      };
+    } else if (t < 0.4) {
+      const local = (t - 0.2) * 5;
+      return {
+        r: Math.round((c1[0] * (1 - local) + c2[0] * local) * 255),
+        g: Math.round((c1[1] * (1 - local) + c2[1] * local) * 255),
+        b: Math.round((c1[2] * (1 - local) + c2[2] * local) * 255)
+      };
+    } else if (t < 0.6) {
+      const local = (t - 0.4) * 5;
+      return {
+        r: Math.round((c2[0] * (1 - local) + c3[0] * local) * 255),
+        g: Math.round((c2[1] * (1 - local) + c3[1] * local) * 255),
+        b: Math.round((c2[2] * (1 - local) + c3[2] * local) * 255)
+      };
+    } else if (t < 0.8) {
+      const local = (t - 0.6) * 5;
+      return {
+        r: Math.round((c3[0] * (1 - local) + c4[0] * local) * 255),
+        g: Math.round((c3[1] * (1 - local) + c4[1] * local) * 255),
+        b: Math.round((c3[2] * (1 - local) + c4[2] * local) * 255)
+      };
     } else {
-      const local = (t - 0.75) * 4;
-      return { r: 255, g: Math.round((1 - local) * 255), b: 0 };
+      const local = (t - 0.8) * 5;
+      return {
+        r: Math.round((c4[0] * (1 - local) + c5[0] * local) * 255),
+        g: Math.round((c4[1] * (1 - local) + c5[1] * local) * 255),
+        b: Math.round((c4[2] * (1 - local) + c5[2] * local) * 255)
+      };
     }
   };
 
   const updateHeatmapDisplay = useCallback(() => {
-    if (!saliencyDataRef.current || !imageRef.current || !heatmapCanvasRef.current) return;
+    if (!saliencyDataRef.current || !imageRef.current || !heatmapCanvasRef.current || !imageMappingRef.current) return;
     
     const img = imageRef.current;
     const canvas = heatmapCanvasRef.current;
     const ctx = canvas.getContext('2d')!;
+    const mapping = imageMappingRef.current;
     
     const rect = img.getBoundingClientRect();
     canvas.width = rect.width;
@@ -474,69 +329,66 @@ export default function AdHeatmapPage() {
     const imageData = ctx.createImageData(canvas.width, canvas.height);
     const data = imageData.data;
     
-    // Assume saliency data is 256x256 (we'll scale it)
-    const saliencyWidth = 256;
-    const saliencyHeight = 256;
-    
-    for (let i = 0; i < canvas.width * canvas.height; i++) {
-      const y = Math.floor(i / canvas.width);
-      const x = i % canvas.width;
-      
-      const saliencyX = Math.floor((x / canvas.width) * saliencyWidth);
-      const saliencyY = Math.floor((y / canvas.height) * saliencyHeight);
-      const saliencyIdx = Math.min(saliencyY * saliencyWidth + saliencyX, saliencyDataRef.current.length - 1);
-      
-      const intensity = saliencyDataRef.current[saliencyIdx] || 0;
-      const color = getPaletteColor(intensity, palette);
-      
-      data[i * 4] = color.r;
-      data[i * 4 + 1] = color.g;
-      data[i * 4 + 2] = color.b;
-      data[i * 4 + 3] = Math.round(255 * heatmapOpacity);
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        // Map canvas coordinates to saliency data coordinates
+        const saliencyX = Math.floor((x / canvas.width) * mapping.canvasWidth);
+        const saliencyY = Math.floor((y / canvas.height) * mapping.canvasHeight);
+        const saliencyIdx = Math.min(saliencyY * mapping.canvasWidth + saliencyX, saliencyDataRef.current.length - 1);
+        
+        const intensity = saliencyDataRef.current[saliencyIdx] || 0;
+        const color = getPaletteColor(intensity, palette);
+        
+        const pixelIdx = (y * canvas.width + x) * 4;
+        data[pixelIdx] = color.r;
+        data[pixelIdx + 1] = color.g;
+        data[pixelIdx + 2] = color.b;
+        data[pixelIdx + 3] = Math.round(255 * heatmapOpacity);
+      }
     }
     
     ctx.putImageData(imageData, 0, 0);
   }, [palette, heatmapOpacity]);
 
   const exportPng = useCallback(() => {
-    if (!image || !saliencyDataRef.current || !imageRef.current) return;
+    if (!image || !saliencyDataRef.current || !imageRef.current || !imageMappingRef.current) return;
     
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
     
     const img = imageRef.current;
+    const mapping = imageMappingRef.current;
+    
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
     
     // Draw original image
     ctx.drawImage(img, 0, 0);
     
-    // Draw heatmap
+    // Draw heatmap overlay
     const imageData = ctx.createImageData(canvas.width, canvas.height);
     const data = imageData.data;
     
-    const saliencyWidth = 256;
-    const saliencyHeight = 256;
-    
-    for (let i = 0; i < canvas.width * canvas.height; i++) {
-      const y = Math.floor(i / canvas.width);
-      const x = i % canvas.width;
-      
-      const saliencyX = Math.floor((x / canvas.width) * saliencyWidth);
-      const saliencyY = Math.floor((y / canvas.height) * saliencyHeight);
-      const saliencyIdx = Math.min(saliencyY * saliencyWidth + saliencyX, saliencyDataRef.current.length - 1);
-      
-      const intensity = saliencyDataRef.current[saliencyIdx] || 0;
-      const color = getPaletteColor(intensity, palette);
-      
-      const originalR = data[i * 4];
-      const originalG = data[i * 4 + 1];
-      const originalB = data[i * 4 + 2];
-      
-      // Blend with original image
-      data[i * 4] = Math.round(originalR * (1 - heatmapOpacity) + color.r * heatmapOpacity);
-      data[i * 4 + 1] = Math.round(originalG * (1 - heatmapOpacity) + color.g * heatmapOpacity);
-      data[i * 4 + 2] = Math.round(originalB * (1 - heatmapOpacity) + color.b * heatmapOpacity);
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        // Map to saliency coordinates
+        const saliencyX = Math.floor((x / img.naturalWidth) * mapping.canvasWidth);
+        const saliencyY = Math.floor((y / img.naturalHeight) * mapping.canvasHeight);
+        const saliencyIdx = Math.min(saliencyY * mapping.canvasWidth + saliencyX, saliencyDataRef.current.length - 1);
+        
+        const intensity = saliencyDataRef.current[saliencyIdx] || 0;
+        const color = getPaletteColor(intensity, palette);
+        
+        const pixelIdx = (y * canvas.width + x) * 4;
+        const originalR = data[pixelIdx];
+        const originalG = data[pixelIdx + 1];
+        const originalB = data[pixelIdx + 2];
+        
+        // Blend with original image
+        data[pixelIdx] = Math.round(originalR * (1 - heatmapOpacity) + color.r * heatmapOpacity);
+        data[pixelIdx + 1] = Math.round(originalG * (1 - heatmapOpacity) + color.g * heatmapOpacity);
+        data[pixelIdx + 2] = Math.round(originalB * (1 - heatmapOpacity) + color.b * heatmapOpacity);
+      }
     }
     
     ctx.putImageData(imageData, 0, 0);
@@ -548,8 +400,9 @@ export default function AdHeatmapPage() {
       ctx.textBaseline = 'middle';
       
       insights.hotspots.forEach((hotspot, index) => {
-        const x = (hotspot.x / saliencyWidth) * canvas.width;
-        const y = (hotspot.y / saliencyHeight) * canvas.height;
+        const canvasPos = mapCoordinatesToCanvas(hotspot.x, hotspot.y);
+        const x = (canvasPos.x / img.getBoundingClientRect().width) * img.naturalWidth;
+        const y = (canvasPos.y / img.getBoundingClientRect().height) * img.naturalHeight;
         
         // Draw glow
         ctx.shadowColor = '#ffffff';
@@ -572,15 +425,41 @@ export default function AdHeatmapPage() {
     link.download = 'heatmap-analysis.png';
     link.href = canvas.toDataURL();
     link.click();
-  }, [image, palette, heatmapOpacity, insights]);
+  }, [image, palette, heatmapOpacity, insights, mapCoordinatesToCanvas]);
 
   const removeImage = () => {
     setImage(null);
     setInsights(null);
     saliencyDataRef.current = null;
+    imageMappingRef.current = null;
     setError(null);
+    setProgress(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const retryProcessing = () => {
+    if (image && workerRef.current) {
+      setIsProcessing(true);
+      setError(null);
+      setProgress({ step: 'Neuberechnung...', progress: 0 });
+      
+      // Re-process with current settings
+      const canvas = hiddenCanvasRef.current!;
+      const ctx = canvas.getContext('2d')!;
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      workerRef.current.postMessage({
+        type: 'process',
+        data: {
+          imageData,
+          width: canvas.width,
+          height: canvas.height,
+          mode,
+          hotspotCount
+        }
+      });
     }
   };
 
@@ -590,28 +469,28 @@ export default function AdHeatmapPage() {
 
   const faqItems = [
     {
-      question: 'Was ist eine Ad Heatmap?',
-      answer: 'Eine Heatmap zeigt visuell, welche Bereiche eines Bildes am meisten Aufmerksamkeit erregen könnten. Sie basiert auf Kontrast, Farben und Gesichtserkennung - ähnlich wie Eye-Tracking-Studien.'
+      question: 'Was ist Itti-Koch-Niebur-Saliency?',
+      answer: 'Ein klassischer Algorithmus für visuelle Saliency, der Intensität, Farbkontrast und Orientierung kombiniert. Er simuliert menschliche Aufmerksamkeitsmuster sehr präzise.'
     },
     {
-      question: 'Wie funktioniert die Saliency-Analyse?',
-      answer: 'Das Tool verwendet eine robuste Pipeline: Sobel-Kantenerkennung (70%) kombiniert mit Farbsättigung (30%), gefolgt von Gaussian Blur und robustem Normalisieren. Dies simuliert menschliche Aufmerksamkeitsmuster.'
+      question: 'Wissenschaftlich vs. Marketing Modus?',
+      answer: 'Wissenschaftlich: 45% Intensität, 25% Farbe, 30% Orientierung. Marketing: 35% Intensität, 20% Farbe, 45% Orientierung - betont Text und Kanten stärker.'
     },
     {
-      question: 'Was bedeuten die Insights?',
-      answer: 'Focus Score: Durchschnittswert der 15% intensivsten Bereiche (0-100). Rule-of-Thirds: Anteil der Aufmerksamkeit in den 4 Kreuzungspunkten. Hotspots: Lokale Maxima mit Energie-Prozent.'
+      question: 'Warum WebWorker?',
+      answer: 'Die Saliency-Berechnung ist sehr rechenintensiv. Der WebWorker verhindert, dass die UI einfriert und ermöglicht Fortschrittsanzeigen.'
     },
     {
-      question: 'Welche Paletten stehen zur Verfügung?',
-      answer: 'Viridis: Wissenschaftlich optimiert, farbenblind-freundlich. Turbo: Helle, kontrastreiche Farben. Classic: Traditionelle Blau-Grün-Gelb-Rot Heatmap.'
+      question: 'Welche Paletten sind verfügbar?',
+      answer: 'Turbo: Helle, kontrastreiche Farben. Viridis: Wissenschaftlich optimiert, farbenblind-freundlich. Inferno: Dunkle Bereiche blau, helle Bereiche gelb-rot.'
     },
     {
-      question: 'Wie werden Hotspots berechnet?',
-      answer: 'Hotspots werden durch lokale Maxima in der Heatmap identifiziert, mit Mindestabstand zwischen ihnen. Der Prozentsatz zeigt die relative Energie in einem Kreis um jeden Hotspot.'
+      question: 'Wie funktioniert die Koordinaten-Mapping?',
+      answer: 'Das System merkt sich die schwarzen Ränder beim Rendern und mappt alle Koordinaten präzise zwischen Originalbild und Preview zurück.'
     },
     {
       question: 'Werden meine Bilder gespeichert?',
-      answer: 'Nein, alle Berechnungen erfolgen lokal in deinem Browser. Keine Bilder oder Daten werden an Server übertragen oder gespeichert.'
+      answer: 'Nein, alle Berechnungen erfolgen lokal in deinem Browser. Keine Bilder oder Daten werden übertragen oder gespeichert.'
     }
   ];
 
@@ -619,14 +498,14 @@ export default function AdHeatmapPage() {
     <>
       <Seo 
         title="Ad Heatmap Generator"
-        description="Professioneller Ad Heatmap Generator mit Saliency-Analyse, Hotspot-Erkennung und Insights. Visualisiere Aufmerksamkeitsbereiche in deinen Ad-Creatives."
+        description="Professioneller Ad Heatmap Generator mit Itti-Koch-Niebur-Saliency, WebWorker-Performance und präziser Koordinaten-Mapping. Visualisiere Aufmerksamkeitsbereiche wissenschaftlich."
         canonical="/ad-heatmap"
       />
       
       <Hero 
         title="Ad Heatmap Generator"
-        subtitle="Professionelle Saliency-Analyse für Ad-Creatives"
-        description="Analysiere die Aufmerksamkeitsbereiche deiner Ads mit robuster Computer-Vision. Erhalte Insights zu Focus Score, Rule-of-Thirds und Hotspots."
+        subtitle="Itti-Koch-Niebur-Saliency für präzise Aufmerksamkeitsanalyse"
+        description="Professionelle Heatmap-Berechnung mit klassischer Computer-Vision. WebWorker-Performance, wissenschaftliche Paletten und pixelgenaue Koordinaten-Mapping."
       />
 
       <div className="container mx-auto px-2 sm:px-4 max-w-screen-xl grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
@@ -659,8 +538,8 @@ export default function AdHeatmapPage() {
                     <img src={image} alt="Uploaded thumbnail" className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-md flex-shrink-0" />
                     <div className="flex-grow min-w-0">
                       <p className="text-text-light font-medium text-sm sm:text-base truncate">Bild hochgeladen</p>
-                      {isProcessing && (
-                        <p className="text-xs sm:text-sm text-text-secondary">Heatmap wird berechnet...</p>
+                      {isProcessing && progress && (
+                        <p className="text-xs sm:text-sm text-text-secondary">{progress.step}</p>
                       )}
                     </div>
                     <Button 
@@ -677,7 +556,35 @@ export default function AdHeatmapPage() {
               
               {error && (
                 <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                  {error}
+                  <div className="flex items-center justify-between">
+                    <span>{error}</span>
+                    {image && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={retryProcessing}
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-1" />
+                        Retry
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {isProcessing && progress && (
+                <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400 text-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <span>{progress.step}</span>
+                    <span>{Math.round(progress.progress * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-surface-secondary rounded-full h-2">
+                    <div 
+                      className="bg-accent h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${progress.progress * 100}%` }}
+                    />
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -706,15 +613,27 @@ export default function AdHeatmapPage() {
                   </div>
                   
                   <div>
+                    <label className="block text-xs sm:text-sm font-medium mb-2">Modus</label>
+                    <select
+                      value={mode}
+                      onChange={(e) => setMode(e.target.value as Mode)}
+                      className="w-full p-3 rounded-md border border-surface-secondary bg-surface-secondary text-text-light text-sm sm:text-base"
+                    >
+                      <option value="marketing">Marketing (mehr Kanten/Text)</option>
+                      <option value="scientific">Wissenschaftlich (ausgewogen)</option>
+                    </select>
+                  </div>
+                  
+                  <div>
                     <label className="block text-xs sm:text-sm font-medium mb-2">Palette</label>
                     <select
                       value={palette}
                       onChange={(e) => setPalette(e.target.value as Palette)}
                       className="w-full p-3 rounded-md border border-surface-secondary bg-surface-secondary text-text-light text-sm sm:text-base"
                     >
-                      <option value="viridis">Viridis (Wissenschaftlich)</option>
                       <option value="turbo">Turbo (Kontrastreich)</option>
-                      <option value="classic">Classic (Traditionell)</option>
+                      <option value="viridis">Viridis (Wissenschaftlich)</option>
+                      <option value="inferno">Inferno (Dramatisch)</option>
                     </select>
                   </div>
                   
@@ -757,6 +676,7 @@ export default function AdHeatmapPage() {
                   <Button 
                     onClick={exportPng}
                     className="w-full text-sm sm:text-base"
+                    disabled={isProcessing}
                   >
                     <Download className="w-4 h-4 mr-2" />
                     Download PNG
@@ -808,15 +728,9 @@ export default function AdHeatmapPage() {
                 <CardTitle className="text-sm sm:text-base">Insights</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-surface-secondary rounded-lg">
-                    <div className="text-lg sm:text-xl font-bold text-accent">{insights.focusScore}</div>
-                    <div className="text-xs sm:text-sm text-text-secondary">Focus Score</div>
-                  </div>
-                  <div className="text-center p-3 bg-surface-secondary rounded-lg">
-                    <div className="text-lg sm:text-xl font-bold text-accent">{insights.thirdsMatch}</div>
-                    <div className="text-xs sm:text-sm text-text-secondary">Rule of Thirds</div>
-                  </div>
+                <div className="text-center p-3 bg-surface-secondary rounded-lg">
+                  <div className="text-lg sm:text-xl font-bold text-accent">{insights.focusScore}</div>
+                  <div className="text-xs sm:text-sm text-text-secondary">Focus Score</div>
                 </div>
                 
                 {insights.hotspots.length > 0 && (
@@ -846,8 +760,9 @@ export default function AdHeatmapPage() {
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 sm:p-4">
               <p className="text-blue-400 font-medium text-sm sm:text-base mb-2">ℹ️ Hinweis</p>
               <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
-                Diese Heatmap basiert auf Saliency-Analyse (Kanten + Farbsättigung) und simuliert menschliche 
-                Aufmerksamkeitsmuster. Die Ergebnisse dienen als Orientierungshilfe für die Gestaltung deiner Ad-Creatives.
+                Diese Heatmap basiert auf der klassischen Itti-Koch-Niebur-Saliency-Methode, die Intensität, 
+                Farbkontrast und Orientierung kombiniert. Die Ergebnisse sind wissenschaftlich fundiert und 
+                simulieren menschliche Aufmerksamkeitsmuster sehr präzise.
               </p>
             </div>
           </CardContent>
