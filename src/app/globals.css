@@ -49,6 +49,27 @@
   .gradient-text {
     @apply bg-gradient-to-r from-accent to-blue-400 bg-clip-text text-transparent;
   }
+  
+  /* Mobile-optimized touch targets */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+  
+  /* Smooth scrolling for mobile */
+  .smooth-scroll {
+    @apply overflow-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Professional heatmap styling */
+  .heatmap-blend {
+    mix-blend-mode: multiply;
+  }
+  
+  /* Prevent horizontal scroll on mobile */
+  .no-horizontal-scroll {
+    @apply overflow-x-hidden;
+  }
 }
 
 

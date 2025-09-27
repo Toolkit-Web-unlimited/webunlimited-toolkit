@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PrivacyNote } from '@/components/PrivacyNote';
 import { Faq } from '@/components/Faq';
-import { Upload, X, Download, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Upload, X, Download, Eye, EyeOff, RefreshCw, Zap } from 'lucide-react';
 
 interface Hotspot {
   x: number;
@@ -17,23 +17,24 @@ interface Hotspot {
 
 interface Insights {
   focusScore: number;
+  thirdsMatch: number;
   hotspots: Hotspot[];
 }
 
-type Palette = 'viridis' | 'turbo' | 'inferno';
-type Mode = 'scientific' | 'marketing';
+type Palette = 'turbo' | 'viridis' | 'inferno';
+type Method = 'onnx' | 'heuristic';
 
 export default function AdHeatmapPage() {
   const [image, setImage] = useState<string | null>(null);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.7);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [palette, setPalette] = useState<Palette>('turbo');
-  const [mode, setMode] = useState<Mode>('marketing');
   const [hotspotCount, setHotspotCount] = useState(3);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
   const [progress, setProgress] = useState<{ step: string; progress: number } | null>(null);
+  const [method, setMethod] = useState<Method | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -53,15 +54,16 @@ export default function AdHeatmapPage() {
   // Initialize worker
   useEffect(() => {
     if (typeof Worker !== 'undefined') {
-      workerRef.current = new Worker(new URL('./heatmap-worker.ts', import.meta.url), { type: 'module' });
+      workerRef.current = new Worker(new URL('./saliency-worker.ts', import.meta.url), { type: 'module' });
       
       workerRef.current.onmessage = (e) => {
         if (e.data.type === 'progress') {
           setProgress({ step: e.data.data.step, progress: e.data.data.progress });
         } else if (e.data.type === 'complete') {
-          const { saliency, hotspots, focusScore } = e.data.data;
+          const { saliency, hotspots, focusScore, thirdsMatch, method: processingMethod } = e.data.data;
           saliencyDataRef.current = saliency;
-          setInsights({ focusScore, hotspots });
+          setInsights({ focusScore, thirdsMatch, hotspots });
+          setMethod(processingMethod);
           updateHeatmapDisplay();
           setIsProcessing(false);
           setProgress(null);
@@ -107,7 +109,7 @@ export default function AdHeatmapPage() {
       const canvas = hiddenCanvasRef.current!;
       const ctx = canvas.getContext('2d')!;
       
-      // Downscale to optimal size (256-384px on longest edge)
+      // Optimal size for professional heatmaps (384px for smooth blobs)
       const maxSize = 384;
       const ratio = Math.min(maxSize / imageBitmap.width, maxSize / imageBitmap.height);
       const width = Math.round(imageBitmap.width * ratio);
@@ -137,7 +139,6 @@ export default function AdHeatmapPage() {
             imageData,
             width,
             height,
-            mode,
             hotspotCount
           }
         });
@@ -151,25 +152,7 @@ export default function AdHeatmapPage() {
       setIsProcessing(false);
       setProgress(null);
     }
-  }, [mode, hotspotCount]);
-
-  const mapCoordinatesToImage = useCallback((canvasX: number, canvasY: number) => {
-    if (!imageMappingRef.current || !imageRef.current) return { x: 0, y: 0 };
-    
-    const mapping = imageMappingRef.current;
-    const img = imageRef.current;
-    const rect = img.getBoundingClientRect();
-    
-    // Calculate actual image position within the canvas
-    const scaleX = img.naturalWidth / rect.width;
-    const scaleY = img.naturalHeight / rect.height;
-    
-    // Convert canvas coordinates to image coordinates
-    const imageX = canvasX * (mapping.canvasWidth / mapping.imageWidth) * scaleX;
-    const imageY = canvasY * (mapping.canvasHeight / mapping.imageHeight) * scaleY;
-    
-    return { x: imageX, y: imageY };
-  }, []);
+  }, [hotspotCount]);
 
   const mapCoordinatesToCanvas = useCallback((imageX: number, imageY: number) => {
     if (!imageMappingRef.current || !imageRef.current) return { x: 0, y: 0 };
@@ -178,7 +161,7 @@ export default function AdHeatmapPage() {
     const img = imageRef.current;
     const rect = img.getBoundingClientRect();
     
-    // Convert image coordinates to canvas coordinates
+    // Convert saliency coordinates to canvas coordinates
     const canvasX = (imageX / mapping.canvasWidth) * (mapping.imageWidth / img.naturalWidth) * rect.width;
     const canvasY = (imageY / mapping.canvasHeight) * (mapping.imageHeight / img.naturalHeight) * rect.height;
     
@@ -351,7 +334,7 @@ export default function AdHeatmapPage() {
   }, [palette, heatmapOpacity]);
 
   const exportPng = useCallback(() => {
-    if (!image || !saliencyDataRef.current || !imageRef.current || !imageMappingRef.current) return;
+    if (!image || !saliencyDataRef.current || !imageRef.current || !imageMappingRef.current || !insights) return;
     
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
@@ -393,9 +376,9 @@ export default function AdHeatmapPage() {
     
     ctx.putImageData(imageData, 0, 0);
     
-    // Draw hotspot badges
-    if (insights?.hotspots) {
-      ctx.font = 'bold 16px Arial';
+    // Draw hotspot badges with professional styling
+    if (insights.hotspots.length > 0) {
+      ctx.font = 'bold 18px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
@@ -404,25 +387,37 @@ export default function AdHeatmapPage() {
         const x = (canvasPos.x / img.getBoundingClientRect().width) * img.naturalWidth;
         const y = (canvasPos.y / img.getBoundingClientRect().height) * img.naturalHeight;
         
-        // Draw glow
+        // Professional badge styling with glow
         ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = 15;
         
-        // Draw badge
-        ctx.fillStyle = `hsl(${index * 120}, 70%, 50%)`;
+        // Badge background with gradient effect
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, 25);
+        gradient.addColorStop(0, `hsla(${index * 120 + 30}, 80%, 60%, 0.9)`);
+        gradient.addColorStop(1, `hsla(${index * 120 + 30}, 80%, 40%, 0.9)`);
+        
+        ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(x, y, 20, 0, Math.PI * 2);
+        ctx.arc(x, y, 25, 0, Math.PI * 2);
         ctx.fill();
         
-        // Draw text
+        // Badge border
         ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 25, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Badge text
         ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px Arial';
         ctx.fillText(`${hotspot.percentage}%`, x, y);
       });
     }
     
     const link = document.createElement('a');
-    link.download = 'heatmap-analysis.png';
+    link.download = 'professional-heatmap-analysis.png';
     link.href = canvas.toDataURL();
     link.click();
   }, [image, palette, heatmapOpacity, insights, mapCoordinatesToCanvas]);
@@ -434,6 +429,7 @@ export default function AdHeatmapPage() {
     imageMappingRef.current = null;
     setError(null);
     setProgress(null);
+    setMethod(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -456,7 +452,6 @@ export default function AdHeatmapPage() {
           imageData,
           width: canvas.width,
           height: canvas.height,
-          mode,
           hotspotCount
         }
       });
@@ -469,43 +464,43 @@ export default function AdHeatmapPage() {
 
   const faqItems = [
     {
-      question: 'Was ist Itti-Koch-Niebur-Saliency?',
-      answer: 'Ein klassischer Algorithmus für visuelle Saliency, der Intensität, Farbkontrast und Orientierung kombiniert. Er simuliert menschliche Aufmerksamkeitsmuster sehr präzise.'
+      question: 'Was sind professionelle Predictive-Heatmaps?',
+      answer: 'Professionelle Heatmaps verwenden Machine Learning und Computer Vision, um vorherzusagen, wo Menschen in Bildern hinsehen. Sie zeigen glatte, blob-artige Bereiche mit klaren Hotspot-Badges - genau wie in der McDonald\'s-Referenz.'
     },
     {
-      question: 'Wissenschaftlich vs. Marketing Modus?',
-      answer: 'Wissenschaftlich: 45% Intensität, 25% Farbe, 30% Orientierung. Marketing: 35% Intensität, 20% Farbe, 45% Orientierung - betont Text und Kanten stärker.'
+      question: 'ONNX-Modell vs. Heuristik?',
+      answer: 'Das ONNX-Modell ist ein vortrainiertes Machine Learning-Modell für höchste Präzision. Falls es nicht lädt, verwendet das Tool automatisch eine erweiterte Heuristik mit Multi-Scale-Edge-Detection und Farbkontrast-Analyse.'
     },
     {
-      question: 'Warum WebWorker?',
-      answer: 'Die Saliency-Berechnung ist sehr rechenintensiv. Der WebWorker verhindert, dass die UI einfriert und ermöglicht Fortschrittsanzeigen.'
+      question: 'Warum glatte Blobs statt scharfe Kanten?',
+      answer: 'Professionelle Heatmaps zeigen glatte Übergänge, weil menschliche Aufmerksamkeit organisch fließt. Multi-Scale-Gaussian-Blur erzeugt diese natürlichen, blob-artigen Formen, die echte Eye-Tracking-Daten simulieren.'
     },
     {
-      question: 'Welche Paletten sind verfügbar?',
-      answer: 'Turbo: Helle, kontrastreiche Farben. Viridis: Wissenschaftlich optimiert, farbenblind-freundlich. Inferno: Dunkle Bereiche blau, helle Bereiche gelb-rot.'
+      question: 'Welche Paletten sind professionell?',
+      answer: 'Turbo: Helle, kontrastreiche Farben für maximale Wirkung. Viridis: Wissenschaftlich optimiert, farbenblind-freundlich. Inferno: Dramatische Farben von dunkel zu hell.'
     },
     {
-      question: 'Wie funktioniert die Koordinaten-Mapping?',
-      answer: 'Das System merkt sich die schwarzen Ränder beim Rendern und mappt alle Koordinaten präzise zwischen Originalbild und Preview zurück.'
+      question: 'Wie werden Hotspot-Badges berechnet?',
+      answer: 'Hotspots werden durch Non-Maximum Suppression gefunden. Der Prozentsatz zeigt die relative Energie in einem Kreis um jeden Hotspot - ähnlich wie in professionellen Predictive-Tools.'
     },
     {
       question: 'Werden meine Bilder gespeichert?',
-      answer: 'Nein, alle Berechnungen erfolgen lokal in deinem Browser. Keine Bilder oder Daten werden übertragen oder gespeichert.'
+      answer: 'Nein, alle Berechnungen erfolgen lokal in deinem Browser. Keine Bilder oder Daten werden übertragen oder gespeichert. Das ONNX-Modell läuft komplett offline.'
     }
   ];
 
   return (
     <>
       <Seo 
-        title="Ad Heatmap Generator"
-        description="Professioneller Ad Heatmap Generator mit Itti-Koch-Niebur-Saliency, WebWorker-Performance und präziser Koordinaten-Mapping. Visualisiere Aufmerksamkeitsbereiche wissenschaftlich."
+        title="Professional Ad Heatmap Generator"
+        description="Professionelle Predictive-Heatmaps mit ONNX-Modell und WebWorker-Performance. Glatte Blobs, Hotspot-Badges und wissenschaftliche Paletten - wie bei McDonald's."
         canonical="/ad-heatmap"
       />
       
       <Hero 
-        title="Ad Heatmap Generator"
-        subtitle="Itti-Koch-Niebur-Saliency für präzise Aufmerksamkeitsanalyse"
-        description="Professionelle Heatmap-Berechnung mit klassischer Computer-Vision. WebWorker-Performance, wissenschaftliche Paletten und pixelgenaue Koordinaten-Mapping."
+        title="Professional Ad Heatmap Generator"
+        subtitle="Predictive-Heatmaps wie bei McDonald's mit ONNX-Modell"
+        description="Erstelle professionelle Heatmaps mit Machine Learning und Computer Vision. Glatte Blobs, präzise Hotspot-Badges und wissenschaftliche Paletten für maximale Wirkung."
       />
 
       <div className="container mx-auto px-2 sm:px-4 max-w-screen-xl grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
@@ -513,7 +508,10 @@ export default function AdHeatmapPage() {
         <div className="space-y-4 sm:space-y-6">
           <Card className="card-custom">
             <CardHeader>
-              <CardTitle className="text-sm sm:text-base">Bild hochladen</CardTitle>
+              <CardTitle className="text-sm sm:text-base flex items-center">
+                <Zap className="w-4 h-4 mr-2 text-accent" />
+                Bild hochladen
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {!image ? (
@@ -538,8 +536,10 @@ export default function AdHeatmapPage() {
                     <img src={image} alt="Uploaded thumbnail" className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-md flex-shrink-0" />
                     <div className="flex-grow min-w-0">
                       <p className="text-text-light font-medium text-sm sm:text-base truncate">Bild hochgeladen</p>
-                      {isProcessing && progress && (
-                        <p className="text-xs sm:text-sm text-text-secondary">{progress.step}</p>
+                      {method && (
+                        <p className="text-xs sm:text-sm text-accent">
+                          {method === 'onnx' ? 'ONNX-Modell' : 'Heuristik'} verwendet
+                        </p>
                       )}
                     </div>
                     <Button 
@@ -608,20 +608,8 @@ export default function AdHeatmapPage() {
                       step="0.1"
                       value={heatmapOpacity}
                       onChange={(e) => setHeatmapOpacity(parseFloat(e.target.value))}
-                      className="w-full h-2 bg-surface-secondary rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-surface-secondary rounded-lg appearance-none cursor-pointer accent-accent"
                     />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium mb-2">Modus</label>
-                    <select
-                      value={mode}
-                      onChange={(e) => setMode(e.target.value as Mode)}
-                      className="w-full p-3 rounded-md border border-surface-secondary bg-surface-secondary text-text-light text-sm sm:text-base"
-                    >
-                      <option value="marketing">Marketing (mehr Kanten/Text)</option>
-                      <option value="scientific">Wissenschaftlich (ausgewogen)</option>
-                    </select>
                   </div>
                   
                   <div>
@@ -631,7 +619,7 @@ export default function AdHeatmapPage() {
                       onChange={(e) => setPalette(e.target.value as Palette)}
                       className="w-full p-3 rounded-md border border-surface-secondary bg-surface-secondary text-text-light text-sm sm:text-base"
                     >
-                      <option value="turbo">Turbo (Kontrastreich)</option>
+                      <option value="turbo">Turbo (Professionell)</option>
                       <option value="viridis">Viridis (Wissenschaftlich)</option>
                       <option value="inferno">Inferno (Dramatisch)</option>
                     </select>
@@ -715,7 +703,7 @@ export default function AdHeatmapPage() {
                 <div className="flex flex-col items-center justify-center p-8 sm:p-12 text-center bg-surface-secondary rounded-lg">
                   <Eye className="w-8 h-8 sm:w-12 sm:h-12 text-text-muted mb-3 sm:mb-4" />
                   <p className="text-text-secondary text-sm sm:text-base">
-                    Lade ein Bild hoch, um die Heatmap zu sehen
+                    Lade ein Bild hoch, um die professionelle Heatmap zu sehen
                   </p>
                 </div>
               )}
@@ -728,9 +716,15 @@ export default function AdHeatmapPage() {
                 <CardTitle className="text-sm sm:text-base">Insights</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="text-center p-3 bg-surface-secondary rounded-lg">
-                  <div className="text-lg sm:text-xl font-bold text-accent">{insights.focusScore}</div>
-                  <div className="text-xs sm:text-sm text-text-secondary">Focus Score</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-3 bg-surface-secondary rounded-lg">
+                    <div className="text-lg sm:text-xl font-bold text-accent">{insights.focusScore}</div>
+                    <div className="text-xs sm:text-sm text-text-secondary">Focus Score</div>
+                  </div>
+                  <div className="text-center p-3 bg-surface-secondary rounded-lg">
+                    <div className="text-lg sm:text-xl font-bold text-accent">{insights.thirdsMatch}</div>
+                    <div className="text-xs sm:text-sm text-text-secondary">Rule of Thirds</div>
+                  </div>
                 </div>
                 
                 {insights.hotspots.length > 0 && (
@@ -758,11 +752,11 @@ export default function AdHeatmapPage() {
         <Card className="card-custom">
           <CardContent className="p-4 sm:p-6">
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 sm:p-4">
-              <p className="text-blue-400 font-medium text-sm sm:text-base mb-2">ℹ️ Hinweis</p>
+              <p className="text-blue-400 font-medium text-sm sm:text-base mb-2">ℹ️ Professionelle Heatmaps</p>
               <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
-                Diese Heatmap basiert auf der klassischen Itti-Koch-Niebur-Saliency-Methode, die Intensität, 
-                Farbkontrast und Orientierung kombiniert. Die Ergebnisse sind wissenschaftlich fundiert und 
-                simulieren menschliche Aufmerksamkeitsmuster sehr präzise.
+                Diese Heatmap verwendet ONNX-Machine Learning für höchste Präzision. Falls das Modell nicht lädt, 
+                wird automatisch eine erweiterte Heuristik mit Multi-Scale-Edge-Detection verwendet. 
+                Das Ergebnis zeigt glatte, blob-artige Bereiche wie in professionellen Predictive-Tools.
               </p>
             </div>
           </CardContent>
