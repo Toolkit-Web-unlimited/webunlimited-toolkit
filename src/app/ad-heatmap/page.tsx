@@ -88,14 +88,16 @@ export default function AdHeatmapPage() {
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const saliencyDataRef = useRef<Float32Array | null>(null);
-  const imageMappingRef = useRef<{
-    imageX: number;
-    imageY: number;
-    imageWidth: number;
-    imageHeight: number;
-    canvasWidth: number;
+  type ImageMapping = {
+    imageWidth: number;  // saliency/map width (downscaled)
+    imageHeight: number; // saliency/map height
+    canvasWidth: number; // sichtbare Bildfläche (ohne Letterboxing)
     canvasHeight: number;
-  } | null>(null);
+    drawX: number; drawY: number; // Offset des Bilds innerhalb des Preview-Rects
+    drawW: number; drawH: number; // tatsächliche gezeichnete Größe des Bildes
+  };
+
+  const imageMappingRef = useRef<ImageMapping | null>(null);
 
   // Initialize worker
   useEffect(() => {
@@ -181,14 +183,26 @@ export default function AdHeatmapPage() {
       
       const imageData = ctx.getImageData(0, 0, width, height);
       
-      // Store mapping for coordinate conversion
+      // Store mapping for coordinate conversion with letterboxing support
+      const imgRect = imgElement.getBoundingClientRect();
+      const scaleX = imgRect.width / imageBitmap.width;
+      const scaleY = imgRect.height / imageBitmap.height;
+      const scale = Math.min(scaleX, scaleY);
+      
+      const scaledWidth = imageBitmap.width * scale;
+      const scaledHeight = imageBitmap.height * scale;
+      const offsetX = (imgRect.width - scaledWidth) / 2;
+      const offsetY = (imgRect.height - scaledHeight) / 2;
+      
       imageMappingRef.current = {
-        imageX: 0,
-        imageY: 0,
-        imageWidth: imageBitmap.width,
-        imageHeight: imageBitmap.height,
-        canvasWidth: width,
-        canvasHeight: height
+        imageWidth: width,  // saliency/map width (downscaled)
+        imageHeight: height, // saliency/map height
+        canvasWidth: imgRect.width, // sichtbare Bildfläche (ohne Letterboxing)
+        canvasHeight: imgRect.height,
+        drawX: offsetX, // Offset des Bilds innerhalb des Preview-Rects
+        drawY: offsetY,
+        drawW: scaledWidth, // tatsächliche gezeichnete Größe des Bildes
+        drawH: scaledHeight,
       };
 
       // Start worker processing
@@ -226,19 +240,6 @@ export default function AdHeatmapPage() {
     }
   }, [hotspotCount]);
 
-  const mapCoordinatesToCanvas = useCallback((imageX: number, imageY: number) => {
-    if (!imageMappingRef.current || !imageRef.current) return { x: 0, y: 0 };
-    
-    const mapping = imageMappingRef.current;
-    const img = imageRef.current;
-    const rect = img.getBoundingClientRect();
-    
-    // Convert saliency coordinates to canvas coordinates
-    const canvasX = (imageX / mapping.canvasWidth) * (mapping.imageWidth / img.naturalWidth) * rect.width;
-    const canvasY = (imageY / mapping.canvasHeight) * (mapping.imageHeight / img.naturalHeight) * rect.height;
-    
-    return { x: canvasX, y: canvasY };
-  }, []);
 
   const getPaletteColor = (value: number, palette: Palette): { r: number; g: number; b: number } => {
     const t = Math.max(0, Math.min(1, value));
@@ -378,30 +379,22 @@ export default function AdHeatmapPage() {
     }
   };
 
-  const mapCoordinatesToCanvas = useCallback((x: number, y: number) => {
-    if (!imageRef.current || !imageMappingRef.current) return { x: 0, y: 0 };
-    
-    const img = imageRef.current;
-    const rect = img.getBoundingClientRect();
-    const mapping = imageMappingRef.current;
-    
-    // Calculate the scale factor
-    const scaleX = rect.width / mapping.originalWidth;
-    const scaleY = rect.height / mapping.originalHeight;
-    const scale = Math.min(scaleX, scaleY);
-    
-    // Calculate the centered position
-    const scaledWidth = mapping.originalWidth * scale;
-    const scaledHeight = mapping.originalHeight * scale;
-    const offsetX = (rect.width - scaledWidth) / 2;
-    const offsetY = (rect.height - scaledHeight) / 2;
-    
-    // Map original coordinates to canvas coordinates
-    return {
-      x: x * scale + offsetX,
-      y: y * scale + offsetY
-    };
-  }, []);
+  const mapCoordinatesToCanvas = useCallback(
+    (sx: number, sy: number): { x: number; y: number } => {
+      const mapping = imageMappingRef.current;
+      const img = imageRef.current;
+      if (!mapping || !img) return { x: 0, y: 0 };
+
+      // sx/sy sind Koordinaten in der Saliency-/Downscale-Ebene
+      const rx = sx / mapping.imageWidth;
+      const ry = sy / mapping.imageHeight;
+
+      // auf die sichtbare Bildfläche (drawW/drawH) mappen + Offsets addieren
+      const x = mapping.drawX + rx * mapping.drawW;
+      const y = mapping.drawY + ry * mapping.drawH;
+      return { x, y };
+    }, []
+  );
 
   const updateHeatmapDisplay = useCallback(() => {
     if (!saliencyDataRef.current || !imageRef.current || !heatmapCanvasRef.current || !imageMappingRef.current) return;
@@ -516,8 +509,8 @@ export default function AdHeatmapPage() {
     if (insights.hotspots.length > 0) {
       insights.hotspots.forEach((hotspot, index) => {
         const canvasPos = mapCoordinatesToCanvas(hotspot.x, hotspot.y);
-        const x = (canvasPos.x / img.getBoundingClientRect().width) * img.naturalWidth;
-        const y = (canvasPos.y / img.getBoundingClientRect().height) * img.naturalHeight;
+        const x = canvasPos.x;
+        const y = canvasPos.y;
         
         // Score-based visual intensity (1 = strongest, 3 = weakest)
         const intensity = 1 - (index * 0.3); // 1.0, 0.7, 0.4
