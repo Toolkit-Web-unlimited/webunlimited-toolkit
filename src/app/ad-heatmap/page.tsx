@@ -378,6 +378,31 @@ export default function AdHeatmapPage() {
     }
   };
 
+  const mapCoordinatesToCanvas = useCallback((x: number, y: number) => {
+    if (!imageRef.current || !imageMappingRef.current) return { x: 0, y: 0 };
+    
+    const img = imageRef.current;
+    const rect = img.getBoundingClientRect();
+    const mapping = imageMappingRef.current;
+    
+    // Calculate the scale factor
+    const scaleX = rect.width / mapping.originalWidth;
+    const scaleY = rect.height / mapping.originalHeight;
+    const scale = Math.min(scaleX, scaleY);
+    
+    // Calculate the centered position
+    const scaledWidth = mapping.originalWidth * scale;
+    const scaledHeight = mapping.originalHeight * scale;
+    const offsetX = (rect.width - scaledWidth) / 2;
+    const offsetY = (rect.height - scaledHeight) / 2;
+    
+    // Map original coordinates to canvas coordinates
+    return {
+      x: x * scale + offsetX,
+      y: y * scale + offsetY
+    };
+  }, []);
+
   const updateHeatmapDisplay = useCallback(() => {
     if (!saliencyDataRef.current || !imageRef.current || !heatmapCanvasRef.current || !imageMappingRef.current) return;
     
@@ -393,6 +418,31 @@ export default function AdHeatmapPage() {
     const imageData = ctx.createImageData(canvas.width, canvas.height);
     const data = imageData.data;
     
+    // Create hotspot influence map for enhanced visual hierarchy
+    const hotspotInfluence = new Float32Array(canvas.width * canvas.height);
+    if (insights && insights.hotspots.length > 0) {
+      insights.hotspots.forEach((hotspot, index) => {
+        const intensity = 1 - (index * 0.3); // 1.0, 0.7, 0.4
+        const influenceRadius = 40 + (index * 15); // Larger radius for higher scores
+        
+        // Map hotspot coordinates to canvas coordinates
+        const canvasPos = mapCoordinatesToCanvas(hotspot.x, hotspot.y);
+        const canvasX = canvasPos.x;
+        const canvasY = canvasPos.y;
+        
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+            const distance = Math.sqrt((x - canvasX) ** 2 + (y - canvasY) ** 2);
+            if (distance <= influenceRadius) {
+              const influence = (1 - distance / influenceRadius) * intensity * 0.4;
+              const pixelIndex = y * canvas.width + x;
+              hotspotInfluence[pixelIndex] = Math.max(hotspotInfluence[pixelIndex], influence);
+            }
+          }
+        }
+      });
+    }
+    
     for (let y = 0; y < canvas.height; y++) {
       for (let x = 0; x < canvas.width; x++) {
         // Map canvas coordinates to saliency data coordinates
@@ -400,7 +450,12 @@ export default function AdHeatmapPage() {
         const saliencyY = Math.floor((y / canvas.height) * mapping.canvasHeight);
         const saliencyIdx = Math.min(saliencyY * mapping.canvasWidth + saliencyX, saliencyDataRef.current.length - 1);
         
-        const intensity = saliencyDataRef.current[saliencyIdx] || 0;
+        let intensity = saliencyDataRef.current[saliencyIdx] || 0;
+        
+        // Enhance saliency around hotspots for clearer visual hierarchy
+        const influence = hotspotInfluence[y * canvas.width + x];
+        intensity = Math.min(1, intensity + influence);
+        
         const color = getPaletteColor(intensity, palette);
         
         const pixelIdx = (y * canvas.width + x) * 4;
@@ -412,7 +467,7 @@ export default function AdHeatmapPage() {
     }
     
     ctx.putImageData(imageData, 0, 0);
-  }, [palette, heatmapOpacity]);
+  }, [palette, heatmapOpacity, insights, mapCoordinatesToCanvas]);
 
   const exportPng = useCallback(() => {
     if (!image || !saliencyDataRef.current || !imageRef.current || !imageMappingRef.current || !insights) return;
@@ -457,50 +512,83 @@ export default function AdHeatmapPage() {
     
     ctx.putImageData(imageData, 0, 0);
     
-    // Draw numbered hotspot badges with classic eye-tracking styling
+    // Draw numbered hotspot badges with clear visual hierarchy
     if (insights.hotspots.length > 0) {
-      ctx.font = 'bold 14px Arial';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      
       insights.hotspots.forEach((hotspot, index) => {
         const canvasPos = mapCoordinatesToCanvas(hotspot.x, hotspot.y);
         const x = (canvasPos.x / img.getBoundingClientRect().width) * img.naturalWidth;
         const y = (canvasPos.y / img.getBoundingClientRect().height) * img.naturalHeight;
         
-        // Numbered marker with classic eye-tracking styling
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 8;
+        // Score-based visual intensity (1 = strongest, 3 = weakest)
+        const intensity = 1 - (index * 0.3); // 1.0, 0.7, 0.4
+        const markerSize = 14 + (index * 2); // Slightly larger for higher scores
         
-        // Small numbered circle
+        // Enhanced shadow for better visibility
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        
+        // Numbered marker circle with enhanced styling
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(x, y, 12, 0, Math.PI * 2);
+        ctx.arc(x, y, markerSize, 0, Math.PI * 2);
         ctx.fill();
         
-        // Black border
+        // Enhanced border with score-based thickness
         ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 + intensity; // Thicker border for higher scores
         ctx.beginPath();
-        ctx.arc(x, y, 12, 0, Math.PI * 2);
+        ctx.arc(x, y, markerSize, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Number inside circle
+        // Number inside circle with score-based styling
         ctx.fillStyle = '#000000';
-        ctx.font = 'bold 12px Arial';
+        ctx.font = `bold ${12 + intensity * 2}px Arial`; // Larger font for higher scores
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText((index + 1).toString(), x, y);
         
-        // Percentage text next to marker
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 4;
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px Arial';
+        // Percentage label box with enhanced styling
+        const labelText = `${index + 1} – ${hotspot.percentage}%`;
+        ctx.font = 'bold 13px Arial';
+        const textMetrics = ctx.measureText(labelText);
+        const labelWidth = textMetrics.width + 16;
+        const labelHeight = 20;
+        const labelX = x + markerSize + 8;
+        const labelY = y - labelHeight / 2;
+        
+        // Label background with score-based color intensity
+        const labelAlpha = 0.9 + (intensity * 0.1);
+        ctx.fillStyle = `rgba(255, 255, 255, ${labelAlpha})`;
+        ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+        
+        // Label border
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
+        
+        // Label text
+        ctx.fillStyle = '#000000';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`${index + 1} – ${hotspot.percentage}%`, x + 18, y);
+        ctx.fillText(labelText, labelX + 8, y);
+        
+        // Additional visual emphasis for #1 hotspot
+        if (index === 0) {
+          // Pulsing effect for top hotspot
+          ctx.shadowColor = '#ff4444';
+          ctx.shadowBlur = 15;
+          ctx.strokeStyle = '#ff4444';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(x, y, markerSize + 3, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
       });
     }
     
@@ -834,17 +922,29 @@ export default function AdHeatmapPage() {
                   <div>
                     <div className="text-xs sm:text-sm font-medium mb-2">Top Hotspots</div>
                     <div className="flex flex-wrap gap-2">
-                      {insights.hotspots.map((hotspot, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center space-x-2 px-3 py-1 bg-accent/20 text-accent rounded-full text-xs sm:text-sm font-medium"
-                        >
-                          <div className="w-4 h-4 bg-white border-2 border-accent rounded-full flex items-center justify-center text-black text-xs font-bold">
-                            {index + 1}
+                      {insights.hotspots.map((hotspot, index) => {
+                        const intensity = 1 - (index * 0.3); // 1.0, 0.7, 0.4
+                        const badgeSize = index === 0 ? 'w-6 h-6' : index === 1 ? 'w-5 h-5' : 'w-4 h-4';
+                        const fontSize = index === 0 ? 'text-sm' : index === 1 ? 'text-xs' : 'text-xs';
+                        const borderWidth = index === 0 ? 'border-3' : 'border-2';
+                        
+                        return (
+                          <div
+                            key={index}
+                            className={`flex items-center space-x-2 px-3 py-2 bg-accent/20 text-accent rounded-full ${fontSize} font-medium ${
+                              index === 0 ? 'ring-2 ring-accent/30 shadow-lg' : ''
+                            }`}
+                            style={{
+                              opacity: 0.8 + (intensity * 0.2) // Higher opacity for higher scores
+                            }}
+                          >
+                            <div className={`${badgeSize} bg-white ${borderWidth} border-accent rounded-full flex items-center justify-center text-black font-bold`}>
+                              {index + 1}
+                            </div>
+                            <span className="font-semibold">{index + 1} – {hotspot.percentage}%</span>
                           </div>
-                          <span>{index + 1} – {hotspot.percentage}%</span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
