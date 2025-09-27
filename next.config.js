@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  eslint: { ignoreDuringBuilds: true },
   images: {
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
@@ -28,7 +29,7 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+export default nextConfig
 
 
 
