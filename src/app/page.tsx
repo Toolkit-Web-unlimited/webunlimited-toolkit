@@ -31,6 +31,15 @@ const tools = [
     features: ['SEO-Check', 'Meta-Analyse', 'Asset-Größen', 'Performance-Score'],
     category: 'SEO'
   },
+  {
+    id: 'ad-heatmap',
+    title: 'Ad Heatmap Generator',
+    description: 'Generiere Heatmaps für deine Ad-Creatives. Analysiere Aufmerksamkeitsbereiche basierend auf Kontrast, Farben und Gesichtserkennung.',
+    href: '/ad-heatmap',
+    icon: '🔥',
+    features: ['Eye-Tracking Simulation', 'Face Detection', 'Color Analysis', 'PNG Export'],
+    category: 'Analytics'
+  },
 ];
 
 export default function HomePage() {
@@ -48,7 +57,7 @@ export default function HomePage() {
         description="Visualisiere Safe Zones für Social Media und analysiere Website-Performance. Alle Tools sind kostenlos, DSGVO-konform und funktionieren direkt im Browser."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mt-8 sm:mt-12 px-4 sm:px-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-8 sm:mt-12 px-4 sm:px-0">
         {tools.map((tool) => (
           <ToolCard key={tool.id} {...tool} />
         ))}
@@ -67,7 +76,7 @@ export default function HomePage() {
             <h3 className="font-semibold mb-2 text-sm sm:text-base">Schnell & Effizient</h3>
             <p className="text-text-secondary text-xs sm:text-sm leading-relaxed">Optimiert für Performance. SSR/SSG für beste SEO-Ergebnisse.</p>
           </div>
-          <div className="card-custom text-center p-4 sm:p-6 sm:col-span-2 lg:col-span-1">
+          <div className="card-custom text-center p-4 sm:p-6">
             <div className="text-2xl sm:text-3xl mb-3 sm:mb-4">🎯</div>
             <h3 className="font-semibold mb-2 text-sm sm:text-base">Professionell</h3>
             <p className="text-text-secondary text-xs sm:text-sm leading-relaxed">Entwickelt von Creative Professionals für den täglichen Einsatz.</p>
