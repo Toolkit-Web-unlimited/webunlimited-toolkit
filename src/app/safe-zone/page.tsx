@@ -568,7 +568,7 @@ function FrameContainer({
     const isMobile = window.innerWidth < 768;
     const frameWidth = isMobile 
       ? Math.min(320, window.innerWidth * 0.85) // 85% auf Mobile
-      : Math.min(350, window.innerWidth * 0.35); // 35% auf Desktop
+      : Math.min(400, window.innerWidth * 0.4); // 40% auf Desktop für bessere Sichtbarkeit
     const frameHeight = (frameWidth * config.height) / config.width;
     
     return { width: frameWidth, height: frameHeight };
@@ -683,52 +683,81 @@ function SafeZoneOverlay({
   useEffect(() => {
     const updateDimensions = () => {
       if (frameRef.current) {
-        const rect = frameRef.current.getBoundingClientRect();
-        const frameWidth = rect.width;
-        const frameHeight = rect.height;
-        
-        // Berechne tatsächliche Bildfläche mit object-fit: contain
-        const frameAspect = frameWidth / frameHeight;
-        const configAspect = config.width / config.height;
-        
-        let imageWidth, imageHeight, imageOffsetX, imageOffsetY;
-        
-        if (frameAspect > configAspect) {
-          // Frame ist breiter - Bild wird an Höhe angepasst
-          imageHeight = frameHeight;
-          imageWidth = frameHeight * configAspect;
-          imageOffsetX = (frameWidth - imageWidth) / 2;
-          imageOffsetY = 0;
-        } else {
-          // Frame ist höher - Bild wird an Breite angepasst
-          imageWidth = frameWidth;
-          imageHeight = frameWidth / configAspect;
-          imageOffsetX = 0;
-          imageOffsetY = (frameHeight - imageHeight) / 2;
-        }
-        
-        setFrameDimensions({
-          width: frameWidth,
-          height: frameHeight,
-          imageWidth,
-          imageHeight,
-          imageOffsetX,
-          imageOffsetY
+        // Warte kurz, damit das Layout vollständig gerendert ist
+        requestAnimationFrame(() => {
+          if (frameRef.current) {
+            const rect = frameRef.current.getBoundingClientRect();
+            const frameWidth = rect.width;
+            const frameHeight = rect.height;
+            
+            // Berechne tatsächliche Bildfläche mit object-fit: contain
+            const frameAspect = frameWidth / frameHeight;
+            const configAspect = config.width / config.height;
+            
+            let imageWidth, imageHeight, imageOffsetX, imageOffsetY;
+            
+            if (frameAspect > configAspect) {
+              // Frame ist breiter - Bild wird an Höhe angepasst
+              imageHeight = frameHeight;
+              imageWidth = frameHeight * configAspect;
+              imageOffsetX = (frameWidth - imageWidth) / 2;
+              imageOffsetY = 0;
+            } else {
+              // Frame ist höher - Bild wird an Breite angepasst
+              imageWidth = frameWidth;
+              imageHeight = frameWidth / configAspect;
+              imageOffsetX = 0;
+              imageOffsetY = (frameHeight - imageHeight) / 2;
+            }
+            
+            setFrameDimensions({
+              width: frameWidth,
+              height: frameHeight,
+              imageWidth,
+              imageHeight,
+              imageOffsetX,
+              imageOffsetY
+            });
+            
+            // Debug-Logging für Desktop-Troubleshooting
+            if (window.innerWidth >= 768) {
+              console.log('[SafeZone] Desktop dimensions:', {
+                frameWidth,
+                frameHeight,
+                imageWidth,
+                imageHeight,
+                imageOffsetX,
+                imageOffsetY,
+                frameAspect: frameWidth / frameHeight,
+                configAspect: config.width / config.height
+              });
+            }
+          }
         });
       }
     };
 
-    updateDimensions();
+    // Initiale Berechnung mit Delay für Desktop
+    const timeoutId = setTimeout(updateDimensions, 100);
     window.addEventListener('resize', updateDimensions);
     
-    return () => window.removeEventListener('resize', updateDimensions);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', updateDimensions);
+    };
   }, [frameRef, config.width, config.height]);
 
   // Skalierungsfaktoren basierend auf tatsächlicher Bildfläche
-  const scaleX = frameDimensions.imageWidth / config.width;
-  const scaleY = frameDimensions.imageHeight / config.height;
+  const scaleX = frameDimensions.imageWidth > 0 ? frameDimensions.imageWidth / config.width : 1;
+  const scaleY = frameDimensions.imageHeight > 0 ? frameDimensions.imageHeight / config.height : 1;
 
   // Safe Zone Margins skalieren mit Halb-Pixel-Offsets für knackscharfe Linien
+  // Fallback auf Frame-Dimensionen wenn Bild-Dimensionen nicht verfügbar
+  const effectiveImageWidth = frameDimensions.imageWidth > 0 ? frameDimensions.imageWidth : frameDimensions.width;
+  const effectiveImageHeight = frameDimensions.imageHeight > 0 ? frameDimensions.imageHeight : frameDimensions.height;
+  const effectiveOffsetX = frameDimensions.imageWidth > 0 ? frameDimensions.imageOffsetX : 0;
+  const effectiveOffsetY = frameDimensions.imageHeight > 0 ? frameDimensions.imageOffsetY : 0;
+  
   const scaledMargins = {
     top: Math.round(config.safeZone.top * scaleY) + 0.5,
     bottom: Math.round(config.safeZone.bottom * scaleY) + 0.5,
@@ -736,12 +765,12 @@ function SafeZoneOverlay({
     right: Math.round(config.safeZone.right * scaleX) + 0.5
   };
 
-  // Safe Zone Rectangle - relativ zur tatsächlichen Bildfläche
+  // Safe Zone Rectangle - relativ zur tatsächlichen Bildfläche mit Fallback
   const safeRect = {
-    x: frameDimensions.imageOffsetX + scaledMargins.left,
-    y: frameDimensions.imageOffsetY + scaledMargins.top,
-    width: frameDimensions.imageWidth - scaledMargins.left - scaledMargins.right,
-    height: frameDimensions.imageHeight - scaledMargins.top - scaledMargins.bottom
+    x: effectiveOffsetX + scaledMargins.left,
+    y: effectiveOffsetY + scaledMargins.top,
+    width: effectiveImageWidth - scaledMargins.left - scaledMargins.right,
+    height: effectiveImageHeight - scaledMargins.top - scaledMargins.bottom
   };
 
   // Risk Areas berechnen - relativ zur tatsächlichen Bildfläche
@@ -750,9 +779,9 @@ function SafeZoneOverlay({
   // Top risk area
   if (scaledMargins.top > 0) {
     riskAreas.push({
-      x: frameDimensions.imageOffsetX,
-      y: frameDimensions.imageOffsetY,
-      width: frameDimensions.imageWidth,
+      x: effectiveOffsetX,
+      y: effectiveOffsetY,
+      width: effectiveImageWidth,
       height: scaledMargins.top
     });
   }
@@ -760,9 +789,9 @@ function SafeZoneOverlay({
   // Bottom risk area
   if (scaledMargins.bottom > 0) {
     riskAreas.push({
-      x: frameDimensions.imageOffsetX,
-      y: frameDimensions.imageOffsetY + frameDimensions.imageHeight - scaledMargins.bottom,
-      width: frameDimensions.imageWidth,
+      x: effectiveOffsetX,
+      y: effectiveOffsetY + effectiveImageHeight - scaledMargins.bottom,
+      width: effectiveImageWidth,
       height: scaledMargins.bottom
     });
   }
@@ -770,20 +799,20 @@ function SafeZoneOverlay({
   // Left risk area
   if (scaledMargins.left > 0) {
     riskAreas.push({
-      x: frameDimensions.imageOffsetX,
-      y: frameDimensions.imageOffsetY + scaledMargins.top,
+      x: effectiveOffsetX,
+      y: effectiveOffsetY + scaledMargins.top,
       width: scaledMargins.left,
-      height: frameDimensions.imageHeight - scaledMargins.top - scaledMargins.bottom
+      height: effectiveImageHeight - scaledMargins.top - scaledMargins.bottom
     });
   }
   
   // Right risk area
   if (scaledMargins.right > 0) {
     riskAreas.push({
-      x: frameDimensions.imageOffsetX + frameDimensions.imageWidth - scaledMargins.right,
-      y: frameDimensions.imageOffsetY + scaledMargins.top,
+      x: effectiveOffsetX + effectiveImageWidth - scaledMargins.right,
+      y: effectiveOffsetY + scaledMargins.top,
       width: scaledMargins.right,
-      height: frameDimensions.imageHeight - scaledMargins.top - scaledMargins.bottom
+      height: effectiveImageHeight - scaledMargins.top - scaledMargins.bottom
     });
   }
 
@@ -825,34 +854,34 @@ function SafeZoneOverlay({
           <div 
             className="absolute w-px bg-white/50"
             style={{
-              left: `${frameDimensions.imageOffsetX + (frameDimensions.imageWidth / 3) + 0.5}px`,
-              top: `${frameDimensions.imageOffsetY}px`,
-              height: `${frameDimensions.imageHeight}px`
+              left: `${effectiveOffsetX + (effectiveImageWidth / 3) + 0.5}px`,
+              top: `${effectiveOffsetY}px`,
+              height: `${effectiveImageHeight}px`
             }}
           />
           <div 
             className="absolute w-px bg-white/50"
             style={{
-              left: `${frameDimensions.imageOffsetX + ((frameDimensions.imageWidth * 2) / 3) + 0.5}px`,
-              top: `${frameDimensions.imageOffsetY}px`,
-              height: `${frameDimensions.imageHeight}px`
+              left: `${effectiveOffsetX + ((effectiveImageWidth * 2) / 3) + 0.5}px`,
+              top: `${effectiveOffsetY}px`,
+              height: `${effectiveImageHeight}px`
             }}
           />
           {/* Horizontal lines */}
           <div 
             className="absolute h-px bg-white/50"
             style={{
-              left: `${frameDimensions.imageOffsetX}px`,
-              top: `${frameDimensions.imageOffsetY + (frameDimensions.imageHeight / 3) + 0.5}px`,
-              width: `${frameDimensions.imageWidth}px`
+              left: `${effectiveOffsetX}px`,
+              top: `${effectiveOffsetY + (effectiveImageHeight / 3) + 0.5}px`,
+              width: `${effectiveImageWidth}px`
             }}
           />
           <div 
             className="absolute h-px bg-white/50"
             style={{
-              left: `${frameDimensions.imageOffsetX}px`,
-              top: `${frameDimensions.imageOffsetY + ((frameDimensions.imageHeight * 2) / 3) + 0.5}px`,
-              width: `${frameDimensions.imageWidth}px`
+              left: `${effectiveOffsetX}px`,
+              top: `${effectiveOffsetY + ((effectiveImageHeight * 2) / 3) + 0.5}px`,
+              width: `${effectiveImageWidth}px`
             }}
           />
         </div>
