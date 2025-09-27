@@ -1,64 +1,33 @@
-/// <reference lib="webworker" />
-// Klassischer Worker, kein ESM-Import hier!
-
-// Import ONNX Runtime via importScripts
-self.importScripts('/vendor/ort.min.js');
-
-// @ts-ignore - ort wird global von importScripts bereitgestellt
-const ort = (self as any).ort;
-
-interface WorkerMessage {
-  type: 'process' | 'progress' | 'complete' | 'error';
-  data: any;
+// Professional Saliency Worker - JavaScript Version
+// Load ONNX Runtime via importScripts
+try {
+  self.importScripts('/vendor/ort.min.js');
+} catch (error) {
+  console.warn('ONNX Runtime not available, using heuristic fallback only');
 }
 
-interface ProcessMessage {
-  imageData: ImageData;
-  width: number;
-  height: number;
-  hotspotCount: number;
-}
+// Get ort from global scope if available
+const ort = typeof self !== 'undefined' && self.ort ? self.ort : null;
 
-interface ProgressMessage {
-  step: string;
-  progress: number;
-}
-
-interface Hotspot {
-  x: number;
-  y: number;
-  percentage: number;
-}
-
-interface ProcessResult {
-  saliency: Float32Array;
-  hotspots: Hotspot[];
-  focusScore: number;
-  thirdsMatch: number;
-  width: number;
-  height: number;
-  method: 'onnx' | 'heuristic';
-}
-
+// Professional Saliency Processor
 class ProfessionalSaliencyProcessor {
-  private width: number;
-  private height: number;
-  private session: any = null;
-  private modelLoaded = false;
-
-  constructor(width: number, height: number) {
+  constructor(width, height) {
     this.width = width;
     this.height = height;
+    this.session = null;
+    this.modelLoaded = false;
   }
 
-  public async compute(imageData: ImageData, progressCallback: (step: string, progress: number) => void): Promise<ProcessResult> {
+  async compute(imageData, progressCallback) {
     progressCallback('Initializing saliency processor...', 0.1);
     
     try {
-      // Try ONNX model first
-      const onnxResult = await this.computeWithONNX(imageData, progressCallback);
-      if (onnxResult) {
-        return onnxResult;
+      // Try ONNX model first if available
+      if (ort) {
+        const onnxResult = await this.computeWithONNX(imageData, progressCallback);
+        if (onnxResult) {
+          return onnxResult;
+        }
       }
     } catch (error) {
       console.warn('ONNX model failed, falling back to heuristic:', error);
@@ -69,31 +38,31 @@ class ProfessionalSaliencyProcessor {
     return this.computeWithHeuristic(imageData, progressCallback);
   }
 
-  private async computeWithONNX(imageData: ImageData, progressCallback: (step: string, progress: number) => void): Promise<ProcessResult | null> {
-    if (!this.modelLoaded) {
+  async computeWithONNX(imageData, progressCallback) {
+    if (!this.modelLoaded && ort) {
       progressCallback('Loading ONNX model...', 0.2);
       
       try {
-        // Check if ort is available
-        if (!ort || !ort.InferenceSession) {
-          console.warn('ONNX Runtime not available');
+        // Check if ort is available and has required methods
+        if (!ort.InferenceSession) {
+          console.warn('ONNX InferenceSession not available');
           return null;
         }
 
         // Configure ONNX Runtime for WebAssembly
-        ort.env.wasm.wasmPaths = '/vendor/';
+        if (ort.env && ort.env.wasm) {
+          ort.env.wasm.wasmPaths = '/vendor/';
+        }
         
-        // Try to load a saliency model (placeholder path)
-        // In production, this would be a real ONNX model file
+        // Try to load a saliency model (this will fail gracefully if file doesn't exist)
         try {
-          // @ts-ignore
           this.session = await ort.InferenceSession.create('/models/saliency.onnx', { 
             executionProviders: ['wasm'] 
           });
           this.modelLoaded = true;
           progressCallback('ONNX model loaded successfully', 0.3);
         } catch (modelError) {
-          console.warn('Model file not found, using heuristic fallback');
+          console.warn('Model file not found, using heuristic fallback:', modelError.message);
           return null;
         }
       } catch (error) {
@@ -117,10 +86,10 @@ class ProfessionalSaliencyProcessor {
       const thirdsMatch = this.computeRuleOfThirds(saliency);
       
       return {
-        saliency,
-        hotspots,
-        focusScore,
-        thirdsMatch,
+        saliency: saliency,
+        hotspots: hotspots,
+        focusScore: focusScore,
+        thirdsMatch: thirdsMatch,
         width: this.width,
         height: this.height,
         method: 'onnx'
@@ -131,7 +100,7 @@ class ProfessionalSaliencyProcessor {
     }
   }
 
-  private computeWithHeuristic(imageData: ImageData, progressCallback: (step: string, progress: number) => void): ProcessResult {
+  computeWithHeuristic(imageData, progressCallback) {
     progressCallback('Computing heuristic saliency...', 0.3);
     
     const saliency = this.enhancedHeuristic(imageData);
@@ -145,17 +114,17 @@ class ProfessionalSaliencyProcessor {
     progressCallback('Heuristic processing complete', 1.0);
     
     return {
-      saliency,
-      hotspots,
-      focusScore,
-      thirdsMatch,
+      saliency: saliency,
+      hotspots: hotspots,
+      focusScore: focusScore,
+      thirdsMatch: thirdsMatch,
       width: this.width,
       height: this.height,
       method: 'heuristic'
     };
   }
 
-  private enhancedHeuristic(imageData: ImageData): Float32Array {
+  enhancedHeuristic(imageData) {
     const data = imageData.data;
     const saliency = new Float32Array(this.width * this.height);
     
@@ -186,7 +155,7 @@ class ProfessionalSaliencyProcessor {
     return smoothed;
   }
 
-  private computeMultiScaleEdges(data: Uint8ClampedArray): Float32Array {
+  computeMultiScaleEdges(data) {
     const edgeMap = new Float32Array(this.width * this.height);
     
     // Multiple edge detection scales
@@ -202,7 +171,7 @@ class ProfessionalSaliencyProcessor {
     return edgeMap;
   }
 
-  private computeEdgesAtScale(data: Uint8ClampedArray, scale: number): Float32Array {
+  computeEdgesAtScale(data, scale) {
     const edges = new Float32Array(this.width * this.height);
     const kernelSize = Math.max(3, Math.floor(scale * 2) + 1);
     const halfKernel = Math.floor(kernelSize / 2);
@@ -232,7 +201,7 @@ class ProfessionalSaliencyProcessor {
     return edges;
   }
 
-  private computeEnhancedColorContrast(data: Uint8ClampedArray): Float32Array {
+  computeEnhancedColorContrast(data) {
     const contrast = new Float32Array(this.width * this.height);
     
     for (let y = 1; y < this.height - 1; y++) {
@@ -274,7 +243,7 @@ class ProfessionalSaliencyProcessor {
     return contrast;
   }
 
-  private computeCenterBias(): Float32Array {
+  computeCenterBias() {
     const centerBias = new Float32Array(this.width * this.height);
     const centerX = this.width / 2;
     const centerY = this.height / 2;
@@ -290,7 +259,7 @@ class ProfessionalSaliencyProcessor {
     return centerBias;
   }
 
-  private computeBrightnessContrast(data: Uint8ClampedArray, index: number): number {
+  computeBrightnessContrast(data, index) {
     const y = Math.floor(index / this.width);
     const x = index % this.width;
     
@@ -319,7 +288,7 @@ class ProfessionalSaliencyProcessor {
     return totalDiff / neighborCount;
   }
 
-  private applyMultiScaleBlur(data: Float32Array): Float32Array {
+  applyMultiScaleBlur(data) {
     // Apply multiple Gaussian blurs for smooth blob-like appearance
     const scales = [2, 4, 8];
     const blurred = new Float32Array(this.width * this.height);
@@ -334,9 +303,9 @@ class ProfessionalSaliencyProcessor {
     return blurred;
   }
 
-  private applyGaussianBlur(data: Float32Array, sigma: number): Float32Array {
+  applyGaussianBlur(data, sigma) {
     const kernelSize = Math.min(Math.ceil(sigma * 3) * 2 + 1, 31);
-    const kernel: number[] = [];
+    const kernel = [];
     let sum = 0;
     
     for (let i = 0; i < kernelSize; i++) {
@@ -383,7 +352,7 @@ class ProfessionalSaliencyProcessor {
     return result;
   }
 
-  private normalizeRobust(data: Float32Array) {
+  normalizeRobust(data) {
     const sorted = Array.from(data).sort((a, b) => a - b);
     const p1 = sorted[Math.floor(sorted.length * 0.01)];
     const p99 = sorted[Math.floor(sorted.length * 0.99)];
@@ -396,8 +365,8 @@ class ProfessionalSaliencyProcessor {
     }
   }
 
-  private findHotspots(data: Float32Array, k: number): Hotspot[] {
-    const candidates: { x: number; y: number; value: number }[] = [];
+  findHotspots(data, k) {
+    const candidates = [];
     const minDistance = Math.max(this.width, this.height) * 0.08; // Increased for better separation
     
     // Find local maxima with higher threshold for professional look
@@ -429,7 +398,7 @@ class ProfessionalSaliencyProcessor {
     
     // Sort by value and apply non-maximum suppression
     candidates.sort((a, b) => b.value - a.value);
-    const hotspots: Hotspot[] = [];
+    const hotspots = [];
     
     for (const candidate of candidates) {
       let tooClose = false;
@@ -466,7 +435,7 @@ class ProfessionalSaliencyProcessor {
         hotspots.push({
           x: candidate.x,
           y: candidate.y,
-          percentage
+          percentage: percentage
         });
         
         if (hotspots.length >= k) break;
@@ -476,7 +445,7 @@ class ProfessionalSaliencyProcessor {
     return hotspots;
   }
 
-  private computeFocusScore(data: Float32Array): number {
+  computeFocusScore(data) {
     const sorted = Array.from(data).sort((a, b) => b - a);
     const top15Count = Math.floor(sorted.length * 0.15);
     const focusScore = Math.round(
@@ -485,7 +454,7 @@ class ProfessionalSaliencyProcessor {
     return focusScore;
   }
 
-  private computeRuleOfThirds(data: Float32Array): number {
+  computeRuleOfThirds(data) {
     const thirdW = this.width / 3;
     const thirdH = this.height / 3;
     const circleRadius = Math.min(this.width, this.height) * 0.06;
@@ -516,13 +485,13 @@ class ProfessionalSaliencyProcessor {
 }
 
 // Worker message handling
-self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
+self.onmessage = async function(e) {
   if (e.data.type === 'process') {
-    const { imageData, width, height, hotspotCount }: ProcessMessage = e.data.data;
+    const { imageData, width, height, hotspotCount } = e.data.data;
     
     try {
       const processor = new ProfessionalSaliencyProcessor(width, height);
-      const result = await processor.compute(imageData, (step: string, progress: number) => {
+      const result = await processor.compute(imageData, function(step, progress) {
         self.postMessage({
           type: 'progress',
           data: { step, progress }
@@ -534,6 +503,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         data: result
       });
     } catch (error) {
+      console.error('Worker processing error:', error);
       self.postMessage({
         type: 'error',
         data: { error: error instanceof Error ? error.message : 'Unknown error' }
