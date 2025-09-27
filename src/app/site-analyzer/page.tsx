@@ -128,7 +128,7 @@ export default function SiteAnalyzerPage() {
         description="Gib eine URL ein und erhalte eine sofortige Analyse der wichtigsten SEO-Elemente. Prüfe Title-Tags, Meta-Descriptions, H1-Tags, Open Graph Tags und mehr."
       />
 
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 px-2 sm:px-4">
         {/* Input Section */}
         <Card className="card-custom">
           <CardHeader>
@@ -138,22 +138,24 @@ export default function SiteAnalyzerPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex space-x-2">
+            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
               <Input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com"
-                className="flex-1"
+                className="flex-1 text-sm sm:text-base"
                 onKeyPress={(e) => e.key === 'Enter' && analyzeSite()}
               />
               <Button 
                 onClick={analyzeSite}
                 disabled={loading || !url.trim()}
+                className="w-full sm:w-auto text-sm sm:text-base"
               >
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Analysiere...
+                    <span className="hidden sm:inline">Analysiere...</span>
+                    <span className="sm:hidden">Lädt...</span>
                   </>
                 ) : (
                   <>
@@ -165,9 +167,9 @@ export default function SiteAnalyzerPage() {
             </div>
             
             {error && (
-              <div className="flex items-center space-x-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span className="text-sm">{error}</span>
+              <div className="flex items-start space-x-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span className="text-sm leading-relaxed">{error}</span>
               </div>
             )}
           </CardContent>
@@ -218,15 +220,15 @@ export default function SiteAnalyzerPage() {
 
             {/* Detailed Analysis */}
             <Tabs defaultValue="meta" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="meta">Meta-Daten</TabsTrigger>
-                <TabsTrigger value="structure">Struktur</TabsTrigger>
-                <TabsTrigger value="social">Social Media</TabsTrigger>
-                <TabsTrigger value="performance">Performance</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+                <TabsTrigger value="meta" className="text-xs sm:text-sm py-2">Meta-Daten</TabsTrigger>
+                <TabsTrigger value="structure" className="text-xs sm:text-sm py-2">Struktur</TabsTrigger>
+                <TabsTrigger value="social" className="text-xs sm:text-sm py-2">Social Media</TabsTrigger>
+                <TabsTrigger value="performance" className="text-xs sm:text-sm py-2">Performance</TabsTrigger>
               </TabsList>
               
               <TabsContent value="meta" className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <Card className="card-custom">
                     <CardHeader>
                       <CardTitle className="flex items-center space-x-2 text-lg">

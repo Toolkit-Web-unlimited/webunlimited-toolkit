@@ -43,7 +43,7 @@
   }
   
   .card-custom {
-    @apply bg-surface-primary border border-surface-secondary rounded-2xl shadow-lg p-6;
+    @apply bg-surface-primary border border-surface-secondary rounded-2xl shadow-lg p-4 sm:p-6;
   }
   
   .gradient-text {

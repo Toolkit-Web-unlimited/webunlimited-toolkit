@@ -273,9 +273,9 @@ export default function SafeZonePage() {
         description="Lade dein Bild oder Video hoch und sieh sofort, welche Bereiche auf verschiedenen Social Media Plattformen von UI-Elementen verdeckt werden könnten. Optimiere deine Inhalte für maximale Sichtbarkeit."
       />
 
-      <div className="container mx-auto px-4 max-w-screen-xl grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="container mx-auto px-2 sm:px-4 max-w-screen-xl grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
         {/* Steuerung */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           <Card className="card-custom">
             <CardHeader>
               <CardTitle>Bild/Video hochladen</CardTitle>
@@ -283,12 +283,12 @@ export default function SafeZonePage() {
             <CardContent>
               {!image ? (
                 <div 
-                  className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-surface-secondary rounded-lg cursor-pointer hover:border-accent transition-colors"
+                  className="flex flex-col items-center justify-center p-4 sm:p-6 border-2 border-dashed border-surface-secondary rounded-lg cursor-pointer hover:border-accent transition-colors min-h-[120px] sm:min-h-[140px]"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <Upload className="w-8 h-8 text-text-secondary mb-3" />
-                  <p className="text-text-light font-medium mb-1">Klicke oder ziehe dein Bild/Video hierher</p>
-                  <p className="text-sm text-text-secondary">Unterstützt: JPG, PNG, GIF, MP4, WebM</p>
+                  <Upload className="w-6 h-6 sm:w-8 sm:h-8 text-text-secondary mb-2 sm:mb-3" />
+                  <p className="text-text-light font-medium mb-1 text-sm sm:text-base">Klicke oder ziehe dein Bild/Video hierher</p>
+                  <p className="text-xs sm:text-sm text-text-secondary">Unterstützt: JPG, PNG, GIF, MP4, WebM</p>
                   <input 
                     type="file" 
                     accept="image/*,video/*" 
@@ -298,22 +298,22 @@ export default function SafeZonePage() {
                   />
                 </div>
               ) : (
-                <div className="relative p-4 border border-surface-secondary rounded-lg bg-surface-secondary">
-                  <div className="flex items-center space-x-3">
-                    <img src={image} alt="Uploaded thumbnail" className="w-16 h-16 object-cover rounded-md" />
-                    <div className="flex-grow">
-                      <p className="text-text-light font-medium">Datei hochgeladen</p>
+                <div className="relative p-3 sm:p-4 border border-surface-secondary rounded-lg bg-surface-secondary">
+                  <div className="flex items-center space-x-2 sm:space-x-3">
+                    <img src={image} alt="Uploaded thumbnail" className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-md flex-shrink-0" />
+                    <div className="flex-grow min-w-0">
+                      <p className="text-text-light font-medium text-sm sm:text-base truncate">Datei hochgeladen</p>
                       {imageSpecs && (
-                        <p className="text-sm text-text-secondary">{imageSpecs.width}x{imageSpecs.height}px, {imageSpecs.ratio}</p>
+                        <p className="text-xs sm:text-sm text-text-secondary">{imageSpecs.width}x{imageSpecs.height}px, {imageSpecs.ratio}</p>
                       )}
                     </div>
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="text-text-secondary hover:text-red-400"
+                      className="text-text-secondary hover:text-red-400 flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10"
                       onClick={removeImage}
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3 h-3 sm:w-4 sm:h-4" />
                     </Button>
                   </div>
                 </div>
@@ -364,7 +364,7 @@ export default function SafeZonePage() {
                   value={selectedConfig}
                   onChange={(e) => setSelectedConfig(e.target.value)}
                   disabled={!image}
-                  className={`w-full p-2 rounded-md border transition-all duration-300 ${
+                  className={`w-full p-3 rounded-md border transition-all duration-300 text-sm sm:text-base ${
                     image 
                       ? 'bg-surface-secondary border-surface-secondary text-text-light focus:ring-accent focus:border-accent' 
                       : 'bg-surface-secondary/50 border-surface-secondary/50 text-text-muted cursor-not-allowed'
@@ -404,7 +404,7 @@ export default function SafeZonePage() {
                   />
                   <label 
                     htmlFor="showSafeOutline" 
-                    className={`text-sm transition-colors duration-300 ${
+                    className={`text-xs sm:text-sm transition-colors duration-300 ${
                       image ? 'text-text-secondary' : 'text-text-muted cursor-not-allowed'
                     }`}
                   >
