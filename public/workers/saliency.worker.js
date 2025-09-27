@@ -1,4 +1,11 @@
-// Professional Saliency Worker with ONNX Model + Heuristic Fallback
+/// <reference lib="webworker" />
+// Klassischer Worker, kein ESM-Import hier!
+
+// Import ONNX Runtime via importScripts
+self.importScripts('/vendor/ort.min.js');
+
+// @ts-ignore - ort wird global von importScripts bereitgestellt
+const ort = (self as any).ort;
 
 interface WorkerMessage {
   type: 'process' | 'progress' | 'complete' | 'error';
@@ -67,18 +74,28 @@ class ProfessionalSaliencyProcessor {
       progressCallback('Loading ONNX model...', 0.2);
       
       try {
-        // Dynamic import of onnxruntime-web
-        const ort = await import('onnxruntime-web');
-        
+        // Check if ort is available
+        if (!ort || !ort.InferenceSession) {
+          console.warn('ONNX Runtime not available');
+          return null;
+        }
+
         // Configure ONNX Runtime for WebAssembly
-        ort.env.wasm.wasmPaths = '/models/';
+        ort.env.wasm.wasmPaths = '/vendor/';
         
-        // Load the saliency model (placeholder - would be a real ONNX model)
-        // For now, we'll simulate the model loading and use heuristic
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate model loading
-        
-        this.modelLoaded = true;
-        progressCallback('ONNX model loaded successfully', 0.3);
+        // Try to load a saliency model (placeholder path)
+        // In production, this would be a real ONNX model file
+        try {
+          // @ts-ignore
+          this.session = await ort.InferenceSession.create('/models/saliency.onnx', { 
+            executionProviders: ['wasm'] 
+          });
+          this.modelLoaded = true;
+          progressCallback('ONNX model loaded successfully', 0.3);
+        } catch (modelError) {
+          console.warn('Model file not found, using heuristic fallback');
+          return null;
+        }
       } catch (error) {
         console.warn('Failed to load ONNX model:', error);
         return null;
@@ -87,11 +104,9 @@ class ProfessionalSaliencyProcessor {
 
     progressCallback('Running ONNX inference...', 0.4);
     
-    // Preprocess image for ONNX model
-    const preprocessed = this.preprocessForONNX(imageData);
-    
     try {
       // For now, simulate ONNX inference with enhanced heuristic
+      // In production, this would use the actual ONNX model
       const saliency = this.enhancedHeuristic(imageData);
       
       progressCallback('Post-processing ONNX results...', 0.8);
@@ -138,20 +153,6 @@ class ProfessionalSaliencyProcessor {
       height: this.height,
       method: 'heuristic'
     };
-  }
-
-  private preprocessForONNX(imageData: ImageData): Float32Array {
-    // Convert ImageData to normalized float array for ONNX model
-    const data = imageData.data;
-    const input = new Float32Array(3 * this.width * this.height);
-    
-    for (let i = 0; i < this.width * this.height; i++) {
-      input[i] = data[i * 4] / 255;         // R
-      input[i + this.width * this.height] = data[i * 4 + 1] / 255;     // G
-      input[i + 2 * this.width * this.height] = data[i * 4 + 2] / 255; // B
-    }
-    
-    return input;
   }
 
   private enhancedHeuristic(imageData: ImageData): Float32Array {

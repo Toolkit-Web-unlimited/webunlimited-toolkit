@@ -54,7 +54,7 @@ export default function AdHeatmapPage() {
   // Initialize worker
   useEffect(() => {
     if (typeof Worker !== 'undefined') {
-      workerRef.current = new Worker(new URL('./saliency-worker.ts', import.meta.url), { type: 'module' });
+      workerRef.current = new Worker('/workers/saliency.worker.js', { type: 'classic' });
       
       workerRef.current.onmessage = (e) => {
         if (e.data.type === 'progress') {
