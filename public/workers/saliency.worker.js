@@ -9,6 +9,14 @@ try {
 // Get ort from global scope if available
 const ort = typeof self !== 'undefined' && self.ort ? self.ort : null;
 
+// Configure ORT for Vercel deployment
+if (ort && ort.env) {
+  ort.env.wasm.wasmPaths = '/vendor';
+  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.simd = true;
+  console.log('[Worker] ORT configured for Vercel deployment');
+}
+
 // Professional Saliency Processor
 class ProfessionalSaliencyProcessor {
   constructor(width, height) {
@@ -56,11 +64,13 @@ class ProfessionalSaliencyProcessor {
         
         // Try to load a saliency model (this will fail gracefully if file doesn't exist)
         try {
-          this.session = await ort.InferenceSession.create('/models/saliency.onnx', { 
-            executionProviders: ['wasm'] 
+          this.session = await ort.InferenceSession.create('/models/mlnet.onnx', { 
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'all'
           });
           this.modelLoaded = true;
           progressCallback('ONNX model loaded successfully', 0.3);
+          console.log('[Worker] ONNX model loaded:', '/models/mlnet.onnx');
         } catch (modelError) {
           console.warn('Model file not found, using heuristic fallback:', modelError.message);
           return null;

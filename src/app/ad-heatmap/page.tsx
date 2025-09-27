@@ -103,7 +103,7 @@ export default function AdHeatmapPage() {
   useEffect(() => {
     if (typeof Worker !== 'undefined') {
       try {
-        workerRef.current = new Worker('/workers/saliency.worker.js', { type: 'classic' });
+        workerRef.current = new Worker(new URL('/workers/saliency.worker.js', import.meta.url), { type: 'classic' });
         
         workerRef.current.onmessage = (e) => {
           if (e.data.type === 'progress') {
@@ -184,6 +184,13 @@ export default function AdHeatmapPage() {
       const imageData = ctx.getImageData(0, 0, width, height);
       
       // Store mapping for coordinate conversion with letterboxing support
+      const imgElement = imageRef.current;
+      if (!imgElement) {
+        setError('Bild-Referenz nicht verfügbar.');
+        setIsProcessing(false);
+        return;
+      }
+      
       const imgRect = imgElement.getBoundingClientRect();
       const scaleX = imgRect.width / imageBitmap.width;
       const scaleY = imgRect.height / imageBitmap.height;
@@ -401,8 +408,13 @@ export default function AdHeatmapPage() {
     
     const img = imageRef.current;
     const canvas = heatmapCanvasRef.current;
-    const ctx = canvas.getContext('2d')!;
+    if (!img || !canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
     const mapping = imageMappingRef.current;
+    if (!mapping) return;
     
     const rect = img.getBoundingClientRect();
     canvas.width = rect.width;
@@ -505,85 +517,8 @@ export default function AdHeatmapPage() {
     
     ctx.putImageData(imageData, 0, 0);
     
-    // Draw numbered hotspot badges with clear visual hierarchy
-    if (insights.hotspots.length > 0) {
-      insights.hotspots.forEach((hotspot, index) => {
-        const canvasPos = mapCoordinatesToCanvas(hotspot.x, hotspot.y);
-        const x = canvasPos.x;
-        const y = canvasPos.y;
-        
-        // Score-based visual intensity (1 = strongest, 3 = weakest)
-        const intensity = 1 - (index * 0.3); // 1.0, 0.7, 0.4
-        const markerSize = 14 + (index * 2); // Slightly larger for higher scores
-        
-        // Enhanced shadow for better visibility
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 12;
-        ctx.shadowOffsetX = 2;
-        ctx.shadowOffsetY = 2;
-        
-        // Numbered marker circle with enhanced styling
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(x, y, markerSize, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Enhanced border with score-based thickness
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2 + intensity; // Thicker border for higher scores
-        ctx.beginPath();
-        ctx.arc(x, y, markerSize, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        // Number inside circle with score-based styling
-        ctx.fillStyle = '#000000';
-        ctx.font = `bold ${12 + intensity * 2}px Arial`; // Larger font for higher scores
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText((index + 1).toString(), x, y);
-        
-        // Percentage label box with enhanced styling
-        const labelText = `${index + 1} – ${hotspot.percentage}%`;
-        ctx.font = 'bold 13px Arial';
-        const textMetrics = ctx.measureText(labelText);
-        const labelWidth = textMetrics.width + 16;
-        const labelHeight = 20;
-        const labelX = x + markerSize + 8;
-        const labelY = y - labelHeight / 2;
-        
-        // Label background with score-based color intensity
-        const labelAlpha = 0.9 + (intensity * 0.1);
-        ctx.fillStyle = `rgba(255, 255, 255, ${labelAlpha})`;
-        ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
-        
-        // Label border
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
-        
-        // Label text
-        ctx.fillStyle = '#000000';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, labelX + 8, y);
-        
-        // Additional visual emphasis for #1 hotspot
-        if (index === 0) {
-          // Pulsing effect for top hotspot
-          ctx.shadowColor = '#ff4444';
-          ctx.shadowBlur = 15;
-          ctx.strokeStyle = '#ff4444';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(x, y, markerSize + 3, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-        }
-      });
-    }
+    // Note: Hotspot markers are now rendered as HTML overlay in the preview
+    // Export only includes the heatmap overlay without markers for cleaner output
     
     const link = document.createElement('a');
     link.download = 'professional-heatmap-analysis.png';
@@ -873,7 +808,40 @@ export default function AdHeatmapPage() {
                     src={image}
                     alt="Preview"
                     className="max-w-full max-h-full object-contain"
-                    onLoad={updateHeatmapDisplay}
+                    onLoad={() => {
+                      // Update dimensions on image load and recalculate mapping
+                      const imgElement = imageRef.current;
+                      if (!imgElement) return;
+                      
+                      const rect = imgElement.getBoundingClientRect();
+                      const naturalWidth = imgElement.naturalWidth;
+                      const naturalHeight = imgElement.naturalHeight;
+                      
+                      // Calculate letterboxing
+                      const scaleX = rect.width / naturalWidth;
+                      const scaleY = rect.height / naturalHeight;
+                      const scale = Math.min(scaleX, scaleY);
+                      
+                      const scaledWidth = naturalWidth * scale;
+                      const scaledHeight = naturalHeight * scale;
+                      const offsetX = (rect.width - scaledWidth) / 2;
+                      const offsetY = (rect.height - scaledHeight) / 2;
+                      
+                      // Update mapping with proper letterboxing
+                      imageMappingRef.current = {
+                        imageWidth: naturalWidth,  // original image dimensions
+                        imageHeight: naturalHeight,
+                        canvasWidth: rect.width,   // visible preview area
+                        canvasHeight: rect.height,
+                        drawX: offsetX,           // letterbox offset
+                        drawY: offsetY,
+                        drawW: scaledWidth,       // actual drawn image size
+                        drawH: scaledHeight,
+                      };
+                      
+                      // Redraw heatmap with new dimensions
+                      updateHeatmapDisplay();
+                    }}
                   />
                   {showHeatmap && (
                     <canvas
@@ -881,6 +849,69 @@ export default function AdHeatmapPage() {
                       className="absolute inset-0 pointer-events-none"
                       style={{ mixBlendMode: 'multiply' }}
                     />
+                  )}
+                  
+                  {/* Hotspot Markers Overlay */}
+                  {insights && insights.hotspots.length > 0 && (
+                    <div className="absolute inset-0 pointer-events-none">
+                      {insights.hotspots.map((hotspot, index) => {
+                        const canvasPos = mapCoordinatesToCanvas(hotspot.x, hotspot.y);
+                        const intensity = 1 - (index * 0.3); // 1.0, 0.7, 0.4
+                        const markerSize = 14 + (index * 2);
+                        
+                        return (
+                          <div
+                            key={index}
+                            className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                            style={{
+                              left: `${canvasPos.x}px`,
+                              top: `${canvasPos.y}px`,
+                            }}
+                          >
+                            {/* Marker Circle */}
+                            <div
+                              className="relative flex items-center justify-center bg-white border-2 border-black rounded-full shadow-lg"
+                              style={{
+                                width: `${markerSize}px`,
+                                height: `${markerSize}px`,
+                                borderWidth: `${2 + intensity}px`,
+                                opacity: 0.9 + (intensity * 0.1)
+                              }}
+                            >
+                              <span 
+                                className="text-black font-bold"
+                                style={{ fontSize: `${12 + intensity * 2}px` }}
+                              >
+                                {index + 1}
+                              </span>
+                            </div>
+                            
+                            {/* Percentage Label */}
+                            <div
+                              className="absolute left-full ml-2 top-1/2 transform -translate-y-1/2 bg-white border border-black rounded px-2 py-1 shadow-lg"
+                              style={{ opacity: 0.9 + (intensity * 0.1) }}
+                            >
+                              <span className="text-black font-semibold text-xs">
+                                {index + 1} – {hotspot.percentage}%
+                              </span>
+                            </div>
+                            
+                            {/* Special glow effect for #1 */}
+                            {index === 0 && (
+                              <div
+                                className="absolute inset-0 border-2 border-red-500 rounded-full animate-pulse"
+                                style={{
+                                  width: `${markerSize + 6}px`,
+                                  height: `${markerSize + 6}px`,
+                                  left: '-3px',
+                                  top: '-3px'
+                                }}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               ) : (
