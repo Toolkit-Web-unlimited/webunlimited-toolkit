@@ -670,16 +670,50 @@ function SafeZoneOverlay({
   showGrid, 
   isRatioMismatch 
 }: SafeZoneOverlayProps) {
-  const [frameDimensions, setFrameDimensions] = useState({ width: 0, height: 0 });
+  const [frameDimensions, setFrameDimensions] = useState({ 
+    width: 0, 
+    height: 0,
+    imageWidth: 0,
+    imageHeight: 0,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  });
 
-  // Berechne Frame-Dimensionen über getBoundingClientRect
+  // Berechne Frame-Dimensionen und tatsächliche Bildfläche (object-fit: contain)
   useEffect(() => {
     const updateDimensions = () => {
       if (frameRef.current) {
         const rect = frameRef.current.getBoundingClientRect();
+        const frameWidth = rect.width;
+        const frameHeight = rect.height;
+        
+        // Berechne tatsächliche Bildfläche mit object-fit: contain
+        const frameAspect = frameWidth / frameHeight;
+        const configAspect = config.width / config.height;
+        
+        let imageWidth, imageHeight, imageOffsetX, imageOffsetY;
+        
+        if (frameAspect > configAspect) {
+          // Frame ist breiter - Bild wird an Höhe angepasst
+          imageHeight = frameHeight;
+          imageWidth = frameHeight * configAspect;
+          imageOffsetX = (frameWidth - imageWidth) / 2;
+          imageOffsetY = 0;
+        } else {
+          // Frame ist höher - Bild wird an Breite angepasst
+          imageWidth = frameWidth;
+          imageHeight = frameWidth / configAspect;
+          imageOffsetX = 0;
+          imageOffsetY = (frameHeight - imageHeight) / 2;
+        }
+        
         setFrameDimensions({
-          width: rect.width,
-          height: rect.height
+          width: frameWidth,
+          height: frameHeight,
+          imageWidth,
+          imageHeight,
+          imageOffsetX,
+          imageOffsetY
         });
       }
     };
@@ -688,11 +722,11 @@ function SafeZoneOverlay({
     window.addEventListener('resize', updateDimensions);
     
     return () => window.removeEventListener('resize', updateDimensions);
-  }, [frameRef]);
+  }, [frameRef, config.width, config.height]);
 
-  // Skalierungsfaktoren basierend auf tatsächlicher Frame-Größe
-  const scaleX = frameDimensions.width / config.width;
-  const scaleY = frameDimensions.height / config.height;
+  // Skalierungsfaktoren basierend auf tatsächlicher Bildfläche
+  const scaleX = frameDimensions.imageWidth / config.width;
+  const scaleY = frameDimensions.imageHeight / config.height;
 
   // Safe Zone Margins skalieren mit Halb-Pixel-Offsets für knackscharfe Linien
   const scaledMargins = {
@@ -702,23 +736,23 @@ function SafeZoneOverlay({
     right: Math.round(config.safeZone.right * scaleX) + 0.5
   };
 
-  // Safe Zone Rectangle
+  // Safe Zone Rectangle - relativ zur tatsächlichen Bildfläche
   const safeRect = {
-    x: scaledMargins.left,
-    y: scaledMargins.top,
-    width: frameDimensions.width - scaledMargins.left - scaledMargins.right,
-    height: frameDimensions.height - scaledMargins.top - scaledMargins.bottom
+    x: frameDimensions.imageOffsetX + scaledMargins.left,
+    y: frameDimensions.imageOffsetY + scaledMargins.top,
+    width: frameDimensions.imageWidth - scaledMargins.left - scaledMargins.right,
+    height: frameDimensions.imageHeight - scaledMargins.top - scaledMargins.bottom
   };
 
-  // Risk Areas berechnen
+  // Risk Areas berechnen - relativ zur tatsächlichen Bildfläche
   const riskAreas = [];
   
   // Top risk area
   if (scaledMargins.top > 0) {
     riskAreas.push({
-      x: 0,
-      y: 0,
-      width: frameDimensions.width,
+      x: frameDimensions.imageOffsetX,
+      y: frameDimensions.imageOffsetY,
+      width: frameDimensions.imageWidth,
       height: scaledMargins.top
     });
   }
@@ -726,9 +760,9 @@ function SafeZoneOverlay({
   // Bottom risk area
   if (scaledMargins.bottom > 0) {
     riskAreas.push({
-      x: 0,
-      y: frameDimensions.height - scaledMargins.bottom,
-      width: frameDimensions.width,
+      x: frameDimensions.imageOffsetX,
+      y: frameDimensions.imageOffsetY + frameDimensions.imageHeight - scaledMargins.bottom,
+      width: frameDimensions.imageWidth,
       height: scaledMargins.bottom
     });
   }
@@ -736,20 +770,20 @@ function SafeZoneOverlay({
   // Left risk area
   if (scaledMargins.left > 0) {
     riskAreas.push({
-      x: 0,
-      y: scaledMargins.top,
+      x: frameDimensions.imageOffsetX,
+      y: frameDimensions.imageOffsetY + scaledMargins.top,
       width: scaledMargins.left,
-      height: frameDimensions.height - scaledMargins.top - scaledMargins.bottom
+      height: frameDimensions.imageHeight - scaledMargins.top - scaledMargins.bottom
     });
   }
   
   // Right risk area
   if (scaledMargins.right > 0) {
     riskAreas.push({
-      x: frameDimensions.width - scaledMargins.right,
-      y: scaledMargins.top,
+      x: frameDimensions.imageOffsetX + frameDimensions.imageWidth - scaledMargins.right,
+      y: frameDimensions.imageOffsetY + scaledMargins.top,
       width: scaledMargins.right,
-      height: frameDimensions.height - scaledMargins.top - scaledMargins.bottom
+      height: frameDimensions.imageHeight - scaledMargins.top - scaledMargins.bottom
     });
   }
 
@@ -784,37 +818,41 @@ function SafeZoneOverlay({
         />
       )}
       
-      {/* Grid (Rule of Thirds) */}
+      {/* Grid (Rule of Thirds) - relativ zur tatsächlichen Bildfläche */}
       {showGrid && (
         <div className="absolute inset-0 opacity-30">
           {/* Vertical lines */}
           <div 
             className="absolute w-px bg-white/50"
             style={{
-              left: `${(frameDimensions.width / 3) + 0.5}px`,
-              height: `${frameDimensions.height}px`
+              left: `${frameDimensions.imageOffsetX + (frameDimensions.imageWidth / 3) + 0.5}px`,
+              top: `${frameDimensions.imageOffsetY}px`,
+              height: `${frameDimensions.imageHeight}px`
             }}
           />
           <div 
             className="absolute w-px bg-white/50"
             style={{
-              left: `${((frameDimensions.width * 2) / 3) + 0.5}px`,
-              height: `${frameDimensions.height}px`
+              left: `${frameDimensions.imageOffsetX + ((frameDimensions.imageWidth * 2) / 3) + 0.5}px`,
+              top: `${frameDimensions.imageOffsetY}px`,
+              height: `${frameDimensions.imageHeight}px`
             }}
           />
           {/* Horizontal lines */}
           <div 
             className="absolute h-px bg-white/50"
             style={{
-              top: `${(frameDimensions.height / 3) + 0.5}px`,
-              width: `${frameDimensions.width}px`
+              left: `${frameDimensions.imageOffsetX}px`,
+              top: `${frameDimensions.imageOffsetY + (frameDimensions.imageHeight / 3) + 0.5}px`,
+              width: `${frameDimensions.imageWidth}px`
             }}
           />
           <div 
             className="absolute h-px bg-white/50"
             style={{
-              top: `${((frameDimensions.height * 2) / 3) + 0.5}px`,
-              width: `${frameDimensions.width}px`
+              left: `${frameDimensions.imageOffsetX}px`,
+              top: `${frameDimensions.imageOffsetY + ((frameDimensions.imageHeight * 2) / 3) + 0.5}px`,
+              width: `${frameDimensions.imageWidth}px`
             }}
           />
         </div>
