@@ -1,20 +1,16 @@
-// Professional Saliency Worker - JavaScript Version
+// Classic Worker - Professional Saliency Processing
 // Load ONNX Runtime via importScripts
-try {
-  self.importScripts('/vendor/ort.min.js');
-} catch (error) {
-  console.warn('ONNX Runtime not available, using heuristic fallback only');
-}
+self.importScripts('/vendor/ort.min.js'); // stellt self.ort bereit
 
-// Get ort from global scope if available
-const ort = typeof self !== 'undefined' && self.ort ? self.ort : null;
-
-// Configure ORT for Vercel deployment
-if (ort && ort.env) {
+// @ts-ignore
+const ort = self.ort;
+if (ort && ort.env && ort.env.wasm) {
   ort.env.wasm.wasmPaths = '/vendor';
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
-  console.log('[Worker] ORT configured for Vercel deployment');
+  console.log('[Worker] ort_loaded - ORT configured for Vercel deployment');
+} else {
+  console.warn('[Worker] ort not available - using heuristic fallback only');
 }
 
 // Professional Saliency Processor
@@ -63,17 +59,20 @@ class ProfessionalSaliencyProcessor {
         }
         
         // Try to load a saliency model (this will fail gracefully if file doesn't exist)
+        let session = null;
         try {
-          this.session = await ort.InferenceSession.create('/models/mlnet.onnx', { 
+          session = await ort.InferenceSession.create('/models/mlnet.onnx', { 
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all'
           });
+          this.session = session;
           this.modelLoaded = true;
           progressCallback('ONNX model loaded successfully', 0.3);
-          console.log('[Worker] ONNX model loaded:', '/models/mlnet.onnx');
+          console.log('[Worker] session_ready - ONNX model loaded:', '/models/mlnet.onnx');
         } catch (modelError) {
           console.warn('Model file not found, using heuristic fallback:', modelError.message);
-          return null;
+          this.modelLoaded = false;
+          this.session = null;
         }
       } catch (error) {
         console.warn('Failed to load ONNX model:', error);
@@ -514,7 +513,7 @@ self.onmessage = async function(e) {
       });
       
       self.postMessage({
-        type: 'complete',
+        type: 'result',
         data: result
       });
     } catch (error) {

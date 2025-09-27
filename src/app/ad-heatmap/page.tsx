@@ -83,7 +83,7 @@ export default function AdHeatmapPage() {
   const [method, setMethod] = useState<Method | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const heatmapCanvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -101,45 +101,47 @@ export default function AdHeatmapPage() {
 
   // Initialize worker
   useEffect(() => {
-    if (typeof Worker !== 'undefined') {
-      try {
-        workerRef.current = new Worker(new URL('/workers/saliency.worker.js', import.meta.url), { type: 'classic' });
-        
-        workerRef.current.onmessage = (e) => {
-          if (e.data.type === 'progress') {
-            setProgress({ step: e.data.data.step, progress: e.data.data.progress });
-          } else if (e.data.type === 'complete') {
-            const { saliency, hotspots, focusScore, thirdsMatch, method: processingMethod } = e.data.data;
-            saliencyDataRef.current = saliency;
-            setInsights({ focusScore, thirdsMatch, hotspots });
-            setMethod(processingMethod);
-            updateHeatmapDisplay();
-            setIsProcessing(false);
-            setProgress(null);
-          } else if (e.data.type === 'error') {
-            setError(`Heatmap-Berechnung fehlgeschlagen: ${e.data.data.error}`);
-            setIsProcessing(false);
-            setProgress(null);
-          }
-        };
-        
-        workerRef.current.onerror = (error) => {
-          console.error('Worker error:', error);
-          setError('WebWorker konnte nicht geladen werden. Bitte lade die Seite neu.');
+    if (typeof window === 'undefined') return;
+    
+    try {
+      // Pfad aus /public - keine relativen Imports
+      const w = new Worker('/workers/saliency.worker.js', { type: 'classic' });
+      workerRef.current = w;
+      
+      w.onmessage = (e) => {
+        if (e.data.type === 'progress') {
+          setProgress({ step: e.data.data.step, progress: e.data.data.progress });
+        } else if (e.data.type === 'result' || e.data.type === 'complete') {
+          const { saliency, hotspots, focusScore, thirdsMatch, method: processingMethod } = e.data.data;
+          saliencyDataRef.current = saliency;
+          setInsights({ focusScore, thirdsMatch, hotspots });
+          setMethod(processingMethod);
+          updateHeatmapDisplay();
           setIsProcessing(false);
           setProgress(null);
-        };
-      } catch (error) {
-        console.error('Failed to create worker:', error);
-        setError('WebWorker wird nicht unterstützt. Bitte verwende einen modernen Browser.');
-      }
-    } else {
-      setError('WebWorker wird nicht unterstützt. Bitte verwende einen modernen Browser.');
+        } else if (e.data.type === 'error') {
+          setError(`Heatmap-Berechnung fehlgeschlagen: ${e.data.data.error}`);
+          setIsProcessing(false);
+          setProgress(null);
+        }
+      };
+      
+      w.onerror = (error) => {
+        console.error('Worker error:', error);
+        setError('WebWorker konnte nicht geladen werden. Fallback aktiviert.');
+        setIsProcessing(false);
+        setProgress(null);
+        // Fallback aktivieren - keine harte Fehlermeldung
+      };
+    } catch (error) {
+      console.error('Failed to create worker:', error);
+      setError('WebWorker wird nicht unterstützt. Fallback aktiviert.');
     }
 
     return () => {
       if (workerRef.current) {
         workerRef.current.terminate();
+        workerRef.current = null;
       }
     };
   }, []);
@@ -389,8 +391,7 @@ export default function AdHeatmapPage() {
   const mapCoordinatesToCanvas = useCallback(
     (sx: number, sy: number): { x: number; y: number } => {
       const mapping = imageMappingRef.current;
-      const img = imageRef.current;
-      if (!mapping || !img) return { x: 0, y: 0 };
+      if (!mapping) return { x: 0, y: 0 };
 
       // sx/sy sind Koordinaten in der Saliency-/Downscale-Ebene
       const rx = sx / mapping.imageWidth;
